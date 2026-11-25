@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key><string>NexusMasterSync</string>
+    <key>CFBundleIdentifier</key><string>com.nexus.mastersync.mac</string>
+    <key>CFBundleName</key><string>Nexus masterSync</string>
+    <key>CFBundleDisplayName</key><string>Nexus masterSync</string>
+    <key>CFBundleIconFile</key><string>Nexus.icns</string>
+    <key>CFBundleDevelopmentRegion</key><string>pt-BR</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.3.4</string>
+    <key>CFBundleVersion</key><string>7</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>O Nexus usa a rede local para conectar os celulares que você autorizar.</string>
+    <key>NSBonjourServices</key><array><string>_nexus-sync._tcp</string></array>
+</dict>
+</plist>

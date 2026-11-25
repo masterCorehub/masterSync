@@ -1,0 +1,8 @@
+<resources>
+    <string name="nexus_keyboard">Teclado Nexus</string>
+    <string name="app_name">Nexus masterSync</string>
+    <style name="Theme.Nexus" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:colorAccent">#454EC4</item>
+    </style>
+</resources>
