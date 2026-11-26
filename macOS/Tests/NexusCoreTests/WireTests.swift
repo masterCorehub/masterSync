@@ -11,6 +11,14 @@ final class WireTests: XCTestCase {
         XCTAssertThrowsError(try Wire.size(of: Data([255, 255, 255, 255])))
     }
 
+    func testLauncherOnlyAcceptsAndroidComponentNames() {
+        XCTAssertTrue(AndroidApp(component: "com.example.app/com.example.Main$Alias", label: "Example").validComponent)
+        XCTAssertTrue(AndroidApp(component: "com.example.app/.MainActivity", label: "Example").validComponent)
+        for invalid in ["com.example.app", "com.example/.Main; echo", "com.example/.Main'", "com.example/.Main\n"] {
+            XCTAssertFalse(AndroidApp(component: invalid, label: "Example").validComponent)
+        }
+    }
+
     func testIdentityAndCredential() throws {
         let identity = try TLSIdentity.ephemeral()
         XCTAssertNotNil(Wire.secret(identity.pin))

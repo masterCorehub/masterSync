@@ -20,6 +20,7 @@ struct ADBWirelessDevice: Codable, Equatable, Sendable {
     var address: String?
     var service: String?
     var deviceID: String?
+    var peerID: String? = nil
 }
 
 struct ADBPairing: Sendable {
@@ -42,6 +43,10 @@ final class ADBClipboard: ObservableObject {
     @Published private(set) var status: String?
     @Published private(set) var wirelessDevice: ADBWirelessDevice?
 
+    @Published private(set) var checkingWireless = false
+    @Published private(set) var wirelessVerified = false
+    @Published private(set) var wirelessSetupError: String?
+
     var receive: ((ADBClipboardEvent) -> Void)?
     private var session: ADBClipboardSession?
     private var task: Task<Void, Never>?
@@ -52,6 +57,49 @@ final class ADBClipboard: ObservableObject {
         if let stored = defaults.data(forKey: Self.wirelessKey) {
             wirelessDevice = try? JSONDecoder().decode(ADBWirelessDevice.self, from: stored)
         }
+    }
+
+    func configureWireless(_ device: ADBWirelessDevice, pairing: ADBPairing?, peer: String,
+                           proof: @escaping (ADBClipboardSession, String, String) async throws -> Void) {
+        guard !checkingWireless else { return }
+        wirelessVerified = false
+        wirelessSetupError = nil
+        guard let adb = Self.adbPath else {
+            wirelessSetupError = "Instale o ADB no Mac e tente novamente."
+            return
+        }
+        checkingWireless = true
+        Task {
+            defer { checkingWireless = false }
+            do {
+                let session = ADBClipboardSession(adb: adb)
+                let resolved = try await Task.detached {
+                    var target = device
+                    if let pairing { target.service = try session.pair(pairing) }
+                    let serial = try await session.wirelessSerial(for: target)
+                    guard let identity = try session.hardwareID(serial: serial) else {
+                        throw NexusError.transfer("O ADB não conseguiu identificar o celular.")
+                    }
+                    target.deviceID = identity
+                    target.peerID = peer
+                    return (target, serial)
+                }.value
+                // Save the binding only after both transports prove they reach this peer.
+                try await proof(session, resolved.1, peer)
+                let confirmed = resolved.0
+                wirelessDevice = confirmed
+                defaults.set(try? JSONEncoder().encode(confirmed), forKey: Self.wirelessKey)
+                wirelessVerified = true
+            } catch {
+                wirelessSetupError = error.localizedDescription
+            }
+        }
+    }
+
+    private static var adbPath: String? {
+        ["/opt/homebrew/bin/adb", "/usr/local/bin/adb",
+         NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb"]
+            .first(where: FileManager.default.isExecutableFile(atPath:))
     }
 
     func startUSB() {
@@ -107,9 +155,7 @@ final class ADBClipboard: ObservableObject {
     private func start(_ transport: Transport,
                        listen: @escaping @Sendable (ADBClipboardSession, URL) async throws -> Void) {
         guard session == nil else { return }
-        let adbPaths = ["/opt/homebrew/bin/adb", "/usr/local/bin/adb",
-                        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Android/sdk/platform-tools/adb").path]
-        guard let adb = adbPaths.first(where: FileManager.default.isExecutableFile(atPath:)) else {
+        guard let adb = Self.adbPath else {
             status = "Instale o ADB para usar esta sincronização."
             return
         }
@@ -198,6 +244,25 @@ final class ADBClipboardSession: @unchecked Sendable {
 
     init(adb: String) { self.adb = adb }
 
+    func openApp(_ app: AndroidApp, serial: String) throws {
+        guard app.validComponent else { throw NexusError.invalidFrame }
+        // adb shell joins the arguments into a remote command, so quote the validated component.
+        let result = try capture(["-s", serial, "shell", "am", "start", "-a", "android.intent.action.MAIN",
+                                  "-c", "android.intent.category.LAUNCHER", "-n", "'\(app.component)'"],
+                                 diagnostics: true)
+        let output = String(decoding: result.0, as: UTF8.self).lowercased()
+        guard result.1 == 0, !output.contains("error"), !output.contains("exception") else {
+            throw NexusError.transfer("O Android não conseguiu abrir este app.")
+        }
+    }
+
+    func sendInput(serial: String, arguments: [String]) throws {
+        let result = try capture(["-s", serial, "shell", "input"] + arguments)
+        guard result.1 == 0 else {
+            throw NexusError.transfer("O Android não recebeu o comando. Confira a conexão ADB.")
+        }
+    }
+
     func usbSerial() throws -> String {
         let result = try capture(["-d", "get-serialno"])
         let serial = String(decoding: result.0, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -209,17 +274,50 @@ final class ADBClipboardSession: @unchecked Sendable {
 
     func pair(_ pairing: ADBPairing) throws -> String? {
         // ADB accepts the code on stdin, so it stays out of process arguments and settings.
-        let result = try capture(["pair", pairing.endpoint.address], input: Data((pairing.code + "\n").utf8))
+        let result = try capture(["pair", pairing.endpoint.address], input: Data((pairing.code + "\n").utf8), diagnostics: true)
         let output = String(decoding: result.0, as: UTF8.self)
         guard result.1 == 0, output.contains("Successfully paired") else {
-            throw NexusError.transfer("O pareamento falhou. Confira o código e a porta da janela Parear dispositivo com código.")
+            let diagnostic = output.lowercased()
+            let hint: String
+            if diagnostic.contains("permission denied") || diagnostic.contains("operation not permitted") {
+                hint = "O Mac bloqueou o acesso do ADB à rede. Revise o acesso à Rede Local nos Ajustes do Sistema."
+            } else if diagnostic.contains("failed to connect") || diagnostic.contains("connection refused")
+                        || diagnostic.contains("timed out") || diagnostic.contains("no route to host") {
+                hint = "O Mac não conseguiu alcançar a porta de pareamento. Use a porta da janela do código e mantenha essa janela aberta no Android."
+            } else if diagnostic.contains("daemon") || diagnostic.contains("cannot bind") {
+                hint = "O serviço local do ADB não iniciou. Feche sessões antigas de depuração e tente novamente."
+            } else {
+                hint = "O Android não confirmou o pareamento. Abra uma nova janela de código, confira o IP e a porta e tente novamente."
+            }
+            // Keep raw ADB output out of the UI because it can contain device addresses.
+            throw NexusError.transfer(hint)
         }
         guard let prefix = output.range(of: "[guid="), let end = output[prefix.upperBound...].firstIndex(of: "]") else { return nil }
         let guid = String(output[prefix.upperBound..<end])
         return !guid.isEmpty && guid.utf8.count <= 128 ? guid : nil
     }
 
+    func verifyPeer(serial: String, nonce: String) throws -> Bool {
+        guard Wire.validID(nonce) else { return false }
+        for app in ["com.nexus.mastersync", "com.nexus.mastersync.direct"] {
+            let component = app + "/com.nexus.mastersync.services.AdbProofReceiver"
+            let result = try capture(["-s", serial, "shell", "am", "broadcast", "--receiver-foreground",
+                                      "-n", component, "--es", "nonce", nonce])
+            let response = String(decoding: result.0, as: UTF8.self).split(whereSeparator: \.isNewline)
+            if result.1 == 0 && response.contains("Broadcast completed: result=1") { return true }
+        }
+        return false
+    }
+
     func wirelessSerial(for device: ADBWirelessDevice) async throws -> String {
+        let serial = try await resolveWirelessSerial(for: device)
+        if let expected = device.deviceID, try hardwareID(serial: serial) != expected {
+            throw ADBWirelessError.changedDevice
+        }
+        return serial
+    }
+
+    private func resolveWirelessSerial(for device: ADBWirelessDevice) async throws -> String {
         let endpoint = device.address.flatMap(ADBEndpoint.init)
         if let guid = device.service {
             let service = guid + "._adb-tls-connect._tcp"
@@ -304,8 +402,8 @@ final class ADBClipboardSession: @unchecked Sendable {
         }
     }
 
-    private func capture(_ arguments: [String], input: Data? = nil) throws -> (Data, Int32) {
-        let command = try start(arguments, liveInput: input != nil)
+    private func capture(_ arguments: [String], input: Data? = nil, diagnostics: Bool = false) throws -> (Data, Int32) {
+        let command = try start(arguments, liveInput: input != nil, diagnostics: diagnostics)
         defer { finish(command) }
         if let input, let writer = command.input {
             try writer.write(contentsOf: input)
@@ -316,7 +414,7 @@ final class ADBClipboardSession: @unchecked Sendable {
         return (data, command.process.terminationStatus)
     }
 
-    private func start(_ arguments: [String], liveInput: Bool) throws -> Command {
+    private func start(_ arguments: [String], liveInput: Bool, diagnostics: Bool = false) throws -> Command {
         lock.lock()
         defer { lock.unlock() }
         guard !cancelled else { throw CancellationError() }
@@ -327,7 +425,7 @@ final class ADBClipboardSession: @unchecked Sendable {
         process.arguments = arguments
         process.standardInput = input.map { $0 as Any } ?? FileHandle.nullDevice
         process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
+        process.standardError = diagnostics ? output : FileHandle.nullDevice
         try process.run()
         let command = Command(process: process, output: output.fileHandleForReading, input: input?.fileHandleForWriting)
         self.command = command

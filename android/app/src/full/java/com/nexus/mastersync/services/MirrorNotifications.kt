@@ -2,17 +2,21 @@ package com.nexus.mastersync.services
 
 import android.app.KeyguardManager
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.RemoteInput
 import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.media.session.MediaSessionManager
+import android.os.Handler
+import android.os.Looper
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.nexus.mastersync.NexusApplication
 import com.nexus.mastersync.protocol.Wire
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
@@ -21,12 +25,16 @@ class MirrorNotifications : NotificationListenerService(), NotificationRelay {
     private val nexus get() = (application as NexusApplication).nexus
     private val forwarded = mutableMapOf<String, StatusBarNotification>()
 
+    private val handler = Handler(Looper.getMainLooper())
+    private val retryRefresh = Runnable { if (nexus.listener === this) refresh() }
+
     override fun onListenerConnected() {
         nexus.listener = this
         nexus.notificationSettingsChanged()
     }
 
     override fun onListenerDisconnected() {
+        handler.removeCallbacksAndMessages(null)
         forwarded.clear()
         if (nexus.listener === this) {
             nexus.listener = null
@@ -42,20 +50,113 @@ class MirrorNotifications : NotificationListenerService(), NotificationRelay {
     }
 
     override fun refresh() {
-        val old = forwarded.keys.toSet()
+        handler.removeCallbacks(retryRefresh)
+        val peer = nexus.client.status.value.connected?.id ?: return
+        val modernPeer = nexus.supportsNoticeSync
+        if (modernPeer) publishDnd(peer)
+        if (!nexus.canMirrorNotices()) return
+        val active = runCatching { activeNotifications }.getOrNull() ?: return
+        if (!modernPeer) {
+            val old = forwarded.keys.toSet()
+            forwarded.clear()
+            active.take(50).forEach(::post)
+            old.minus(forwarded.keys).forEach(::remove)
+            return
+        }
+
+        val entries = active.mapNotNull { notice -> entry(notice)?.let { notice to it } }
+        val batches = entries.chunked(12).ifEmpty { listOf(emptyList()) }
+        val snapshotID = Wire.id()
+        // Commit on the last batch so the Mac never renders a partial snapshot.
+        batches.forEachIndexed { index, batch ->
+            val payload = Wire.message("noticeSnapshot").put("id", snapshotID)
+                .put("offset", index).put("more", index < batches.lastIndex)
+                .put("notices", JSONArray(batch.map { it.second }))
+            if (!nexus.client.sendTo(peer, payload)) {
+                handler.postDelayed(retryRefresh, 500)
+                return
+            }
+        }
         forwarded.clear()
-        val active = runCatching { activeNotifications?.toList() }.getOrNull().orEmpty()
-        active.take(50).forEach(::post)
-        old.minus(forwarded.keys).forEach(::remove)
+        entries.forEach { (notice, message) -> forwarded[message.getString("id")] = notice }
+    }
+
+    override fun onInterruptionFilterChanged(interruptionFilter: Int) {
+        val peer = nexus.client.status.value.connected?.id ?: return
+        if (nexus.supportsNoticeSync) publishDnd(peer)
+    }
+
+    private fun publishDnd(peer: String, requested: Boolean? = null, error: String? = null) {
+        val manager = getSystemService(NotificationManager::class.java)
+        val filter = manager.currentInterruptionFilter
+        val enabled = filter != NotificationManager.INTERRUPTION_FILTER_ALL &&
+            filter != NotificationManager.INTERRUPTION_FILTER_UNKNOWN
+        val message = Wire.message("dndState").put("dndAllowed", manager.isNotificationPolicyAccessGranted)
+            .put("dndEnabled", enabled)
+        val feedback = error ?: if (requested == false && enabled)
+            "O Android continua em Não Perturbe. Verifique os modos ativos no celular."
+            else if (requested == true && !enabled) "O Android não ativou o Não Perturbe." else null
+        feedback?.let { message.put("message", it) }
+        nexus.client.sendTo(peer, message)
+    }
+
+    private fun setDnd(enabled: Boolean) {
+        val peer = nexus.client.status.value.connected?.id ?: return
+        val manager = getSystemService(NotificationManager::class.java)
+        if (!manager.isNotificationPolicyAccessGranted) {
+            publishDnd(peer, error = "Autorize o Não Perturbe no MasterSync do Android.")
+            return
+        }
+        runCatching {
+            manager.setInterruptionFilter(if (enabled) NotificationManager.INTERRUPTION_FILTER_PRIORITY
+                else NotificationManager.INTERRUPTION_FILTER_ALL)
+        }.onSuccess {
+            handler.postDelayed({ publishDnd(peer, requested = enabled) }, 500)
+        }.onFailure {
+            publishDnd(peer, error = "O Android não permitiu alterar o Não Perturbe.")
+        }
     }
 
     override fun receive(data: JSONObject) {
         val id = data.optString("id")
-        val previous = forwarded[id] ?: return
-        val current = runCatching { getActiveNotifications(arrayOf(previous.key))?.firstOrNull() }.getOrNull() ?: return
+        if (data.optString("type") == "dndSet") {
+            setDnd(data.optBoolean("dndEnabled"))
+            return
+        }
+        val dismiss = data.optString("type") == "noticeDismiss"
+        val previous = forwarded[id] ?: run {
+            if (dismiss && nexus.supportsNoticeSync) refresh()
+            return
+        }
+        val active = runCatching { getActiveNotifications(arrayOf(previous.key)) }.getOrNull()
+        if (active == null) {
+            if (dismiss) dismissFailed(id)
+            return
+        }
+        val current = active.firstOrNull()
+        if (current == null) {
+            forwarded.remove(id)
+            remove(id)
+            return
+        }
         if (current.packageName in nexus.options.value.blockedApps) return
         when (data.optString("type")) {
-            "noticeDismiss" -> cancelNotification(current.key)
+            "noticeDismiss" -> {
+                if (!current.isClearable || runCatching { cancelNotification(current.key) }.isFailure) {
+                    dismissFailed(id)
+                    return
+                }
+                val peer = nexus.client.status.value.connected?.id
+                handler.postDelayed({
+                    if (peer == nexus.client.status.value.connected?.id && forwarded[id] != null) {
+                        val remaining = runCatching { getActiveNotifications(arrayOf(current.key)) }.getOrNull()
+                        if (remaining?.isEmpty() == true) {
+                            forwarded.remove(id)
+                            remove(id)
+                        } else dismissFailed(id)
+                    }
+                }, 1000)
+            }
             "noticeReply" -> {
                 if (privateContent(current)) return
                 val action = replyAction(current) ?: return
@@ -72,23 +173,39 @@ class MirrorNotifications : NotificationListenerService(), NotificationRelay {
     }
 
     private fun post(sbn: StatusBarNotification) {
+        val message = entry(sbn)
+        val id = id(sbn.key)
+        if (message == null) {
+            if (forwarded.remove(id) != null) remove(id)
+            return
+        }
+        if (nexus.client.send(message)) forwarded[id] = sbn
+        else if (nexus.supportsNoticeSync) handler.postDelayed(retryRefresh, 500)
+    }
+
+    private fun entry(sbn: StatusBarNotification): JSONObject? {
         val source = sbn.packageName
         val notification = sbn.notification
-        if (source == packageName || sbn.isOngoing || notification.visibility == Notification.VISIBILITY_SECRET ||
-            notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+        if (source == packageName || notification.visibility == Notification.VISIBILITY_SECRET ||
+            notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return null
         val label = runCatching { packageManager.getApplicationInfo(source, 0).loadLabel(packageManager).toString() }
             .getOrDefault(source).take(80)
         nexus.noticeApp(source, label)
-        if (!nexus.canMirrorNotices() || source in nexus.options.value.blockedApps) return
+        if (!nexus.canMirrorNotices() || source in nexus.options.value.blockedApps) return null
         val redacted = privateContent(sbn)
         val extras = notification.extras ?: Bundle.EMPTY
         val id = id(sbn.key)
         val message = Wire.message("notice").put("id", id).put("app", label).put("group", source.take(180))
             .put("name", if (redacted) "Notificação recebida" else extras.getCharSequence(Notification.EXTRA_TITLE)?.take(120)?.toString() ?: label)
             .put("text", if (redacted) "" else extras.getCharSequence(Notification.EXTRA_TEXT)?.take(600)?.toString().orEmpty())
-            .put("canReply", !redacted && replyAction(sbn) != null).put("at", sbn.postTime)
+            .put("canDismiss", sbn.isClearable).put("canReply", !redacted && replyAction(sbn) != null).put("at", sbn.postTime)
         icon(sbn)?.let { message.put("data", it) }
-        if (nexus.client.send(message)) forwarded[id] = sbn
+        return message
+    }
+
+    private fun dismissFailed(id: String) {
+        nexus.client.send(Wire.message("noticeDismissFailed").put("id", id)
+            .put("message", "O Android manteve essa notificação ativa."))
     }
 
     private fun privateContent(sbn: StatusBarNotification): Boolean =
@@ -100,7 +217,11 @@ class MirrorNotifications : NotificationListenerService(), NotificationRelay {
             it.actionIntent != null && it.remoteInputs?.any { input -> input.allowFreeFormInput } == true
         }
 
-    private fun remove(id: String) { nexus.client.send(Wire.message("noticeRemoved").put("id", id)) }
+    private fun remove(id: String) {
+        if (!nexus.client.send(Wire.message("noticeRemoved").put("id", id)) && nexus.supportsNoticeSync) {
+            handler.postDelayed(retryRefresh, 500)
+        }
+    }
 
     private fun id(value: String) = Wire.encode(MessageDigest.getInstance("SHA-256").digest(value.toByteArray()))
 
@@ -114,6 +235,16 @@ class MirrorNotifications : NotificationListenerService(), NotificationRelay {
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
             Wire.encode(output.toByteArray())
         } finally { bitmap.recycle() }
+    }.getOrNull()
+
+    override fun mediaStatus(): JSONObject? = runCatching {
+        val source = ComponentName(this, MirrorNotifications::class.java)
+        val session = getSystemService(MediaSessionManager::class.java).getActiveSessions(source).firstOrNull()
+        Wire.message("mediaStatus").apply {
+            session?.metadata?.description?.title?.toString()?.take(150)?.let { put("name", it) }
+            session?.metadata?.description?.subtitle?.toString()?.take(150)?.let { put("text", it) }
+            session?.playbackState?.let { put("playing", it.state == android.media.session.PlaybackState.STATE_PLAYING) }
+        }
     }.getOrNull()
 
     override fun media(command: String): String = runCatching {

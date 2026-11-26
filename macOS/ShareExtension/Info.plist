@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleIdentifier</key><string>com.nexus.mastersync.mac.share</string>
+    <key>CFBundlePackageType</key><string>XPC!</string>
+    <key>CFBundleExecutable</key><string>MasterSyncShare</string>
+    <key>CFBundleName</key><string>Enviar ao Android</string>
+    <key>CFBundleDisplayName</key><string>Enviar ao Android</string>
+    <key>CFBundleDevelopmentRegion</key><string>pt-BR</string>
+    <key>CFBundleVersion</key><string>8</string>
+    <key>CFBundleShortVersionString</key><string>0.3.5</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>NSExtension</key><dict>
+        <key>NSExtensionPointIdentifier</key><string>com.apple.share-services</string>
+        <key>NSExtensionPrincipalClass</key><string>MasterSyncShareController</string>
+        <key>NSExtensionAttributes</key><dict>
+            <key>NSExtensionActivationRule</key><dict>
+                <key>NSExtensionActivationSupportsFileWithMaxCount</key><integer>10</integer>
+                <key>NSExtensionActivationSupportsImageWithMaxCount</key><integer>10</integer>
+                <key>NSExtensionActivationSupportsWebURLWithMaxCount</key><integer>10</integer>
+                <key>NSExtensionActivationSupportsText</key><true/>
+            </dict>
+        </dict>
+    </dict>
+</dict></plist>

@@ -22,6 +22,17 @@ object RequestNotifications {
             .setAutoCancel(true).build())
     }
 
+    fun notifyPhoto(context: Context) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(NotificationChannel("camera-request", "Pedidos de foto", NotificationManager.IMPORTANCE_DEFAULT))
+        val pending = PendingIntent.getActivity(context, 17, Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        manager.notify(1005, Notification.Builder(context, "camera-request")
+            .setSmallIcon(R.drawable.ic_nexus).setContentTitle("O Mac solicitou uma foto")
+            .setContentText("Toque para abrir o pedido no MasterSync.").setContentIntent(pending)
+            .setAutoCancel(true).build())
+    }
+
     fun notifyScan(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("scan", "Solicitações de scanner", NotificationManager.IMPORTANCE_DEFAULT))

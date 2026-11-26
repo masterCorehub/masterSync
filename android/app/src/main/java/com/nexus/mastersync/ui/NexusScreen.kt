@@ -31,10 +31,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -44,6 +46,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.BackHandler
+import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.ImageVector
 import android.app.Activity
 import android.net.Uri
 import androidx.core.view.WindowCompat
@@ -60,7 +72,6 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.heading
@@ -81,7 +92,7 @@ import java.text.DateFormat
 import java.util.Date
 
 enum class Tab(val label: String) {
-    Home("Início"), Scan("Digitalizar"), Share("Compartilhar"), Devices("Dispositivos"), Settings("Configurações")
+    Home("Início"), Scan("Digitalizar"), Share("Conversa"), Devices("Dispositivos"), Settings("Configurações")
 }
 
 private val light = lightColorScheme(
@@ -112,6 +123,7 @@ fun NexusScreen(
     onConnection: () -> Unit,
     onNotificationSettings: () -> Unit,
     onGalleryAccess: () -> Unit,
+    onApprovePhoto: () -> Unit = {},
     onApproveScreen: () -> Unit,
     onKeyboardSettings: () -> Unit,
     onChooseKeyboard: () -> Unit,
@@ -132,6 +144,7 @@ fun NexusScreen(
     val message by nexus.feedback.collectAsStateWithLifecycle()
     val background by nexus.background.collectAsStateWithLifecycle()
     val scanRequest by nexus.pendingScan.collectAsStateWithLifecycle()
+    val photoRequest by nexus.pendingPhoto.collectAsStateWithLifecycle()
     val screenRequest by nexus.pendingMirror.collectAsStateWithLifecycle()
     val mirroring by nexus.mirroring.collectAsStateWithLifecycle()
     val useDark = options.theme == "dark" || options.theme == "system" && isSystemInDarkTheme()
@@ -145,23 +158,41 @@ fun NexusScreen(
             }
         }
     }
+    var showAccess by rememberSaveable { mutableStateOf(false) }
+    val accessOpen = tab == Tab.Settings && showAccess
+    BackHandler(tab == Tab.Settings) {
+        if (accessOpen) showAccess = false else navigate(Tab.Home)
+    }
     MaterialTheme(colorScheme = if (useDark) dark else light) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                TopAppBar(title = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                TopAppBar(colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background), title = {
+                    if (tab == Tab.Settings) {
+                        Text(if (accessOpen) "Permissões e acessos" else "Configurações")
+                    } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
                             Icon(painterResource(R.drawable.ic_nexus), null, Modifier.padding(7.dp).size(20.dp),
                                 tint = MaterialTheme.colorScheme.onPrimaryContainer)
                         }
-                        Text("Nexus masterSync", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                        Text("MasterSync", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    }
+                }, navigationIcon = {
+                    if (tab == Tab.Settings) IconButton(onClick = {
+                        if (accessOpen) showAccess = false else navigate(Tab.Home)
+                    }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar")
+                    }
+                }, actions = {
+                    if (tab != Tab.Settings) IconButton(onClick = { navigate(Tab.Settings) }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Configurações")
                     }
                 })
             },
             bottomBar = {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                    Tab.entries.forEach { item ->
+                if (tab != Tab.Settings) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                    Tab.entries.filter { it != Tab.Settings }.forEach { item ->
                         NavigationBarItem(selected = tab == item, onClick = { navigate(item) }, icon = {
                             Icon(when (item) {
                                 Tab.Home -> Icons.Default.Home
@@ -175,19 +206,19 @@ fun NexusScreen(
                 }
             }
         ) { insets ->
-            LazyColumn(Modifier.padding(insets), contentPadding = PaddingValues(18.dp),
+            LazyColumn(Modifier.padding(insets), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(13.dp)) {
-                if (tab != Tab.Home) item { PageTitle(tab.label) }
+                if (tab != Tab.Home && tab != Tab.Settings) item { PageTitle(tab.label) }
                 if (mirroring) item { Feedback("Sua tela está sendo compartilhada com o Mac.", onClose = nexus::stopMirror, action = "Parar") }
                 if (message.isNotBlank()) item { Feedback(message, onClose = { nexus.note("") }) }
                 item {
                     when (tab) {
-                        Tab.Home -> Home(connection, options, permission, navigate)
+                        Tab.Home -> Home(connection, options, permission, navigate) { nexus.update(options.copy(clipboard = it)) }
                         Tab.Scan -> ScanPage(nexus, documents, scannerBusy, onScan, onAdvancedScan, onOCR, onSendDocument, onExport)
                         Tab.Share -> SharePage(nexus, connection, options, permission, shared, clearShared, onChoose, onExport,
                             background, onConnection, onKeyboardSettings, onChooseKeyboard)
                         Tab.Devices -> Devices(nexus, connection, background, onQr, onConnection)
-                        Tab.Settings -> SettingsPage(nexus, options, onNotificationSettings, onGalleryAccess, background, onConnection)
+                        Tab.Settings -> SettingsPage(nexus, options, onNotificationSettings, onGalleryAccess, background, onConnection, onKeyboardSettings, onChooseKeyboard, accessOpen, { showAccess = true }, connection.connected != null)
                     }
                 }
             }
@@ -199,6 +230,13 @@ fun NexusScreen(
                 text = { Text("O Mac pareado poderá ver o conteúdo que você selecionar no próximo diálogo do Android. Você pode parar a qualquer momento pela notificação.") },
                 confirmButton = { TextButton(onClick = onApproveScreen) { Text("Continuar") } },
                 dismissButton = { TextButton(onClick = { nexus.decideMirror(false) }) { Text("Recusar") } })
+        }
+        if (photoRequest != null && screenRequest == null && scanRequest == null) {
+            AlertDialog(onDismissRequest = { nexus.decidePhoto(false) },
+                title = { Text("Tirar foto para o Mac?") },
+                text = { Text("Confirme a foto na câmera do Android para enviar a imagem ao Mac pareado.") },
+                confirmButton = { TextButton(enabled = !scannerBusy, onClick = onApprovePhoto) { Text("Abrir câmera") } },
+                dismissButton = { TextButton(onClick = { nexus.decidePhoto(false) }) { Text("Recusar") } })
         }
         if (scanRequest != null) {
             AlertDialog(onDismissRequest = { nexus.decideScan(false) },
@@ -227,52 +265,63 @@ fun NexusScreen(
 
 @Composable
 private fun Home(status: LocalClient.Status, options: NexusController.Options, permission: NexusController.Permissions,
-                 navigate: (Tab) -> Unit) {
+                 navigate: (Tab) -> Unit, onClipboard: (Boolean) -> Unit) {
     Stack {
         PageTitle("Início")
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer),
+        Card(onClick = { navigate(Tab.Devices) }, modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
             shape = RoundedCornerShape(24.dp)) {
-            Row(Modifier.padding(18.dp), horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 MacIllustration()
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(status.title, style = MaterialTheme.typography.labelLarge)
-                    Text(status.connected?.name ?: "Seu Mac", style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold)
-                    Text(status.info, style = MaterialTheme.typography.bodySmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(status.connected?.name ?: "Conectar Mac", style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold)
+                        Muted(if (status.connected != null) "Conectado pela rede local" else status.title)
+                    }
+                    Icon(Icons.Default.KeyboardArrowRight, contentDescription = null)
                 }
             }
         }
-        Panel("Ações rápidas") {
-            StackedActions(listOf(
-                (if (status.connected == null) "Parear Mac" else "Gerenciar dispositivos") to { navigate(Tab.Devices) },
-                "Digitalizar documento" to { navigate(Tab.Scan) },
-                "Arquivos e área de transferência" to { navigate(Tab.Share) }
-            ))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            QuickAction("Conversa", Icons.Default.Share, Modifier.weight(1f)) { navigate(Tab.Share) }
+            QuickAction("Digitalizar", Icons.Default.Search, Modifier.weight(1f)) { navigate(Tab.Scan) }
         }
-        Panel("Recursos ativos") {
-            Capability("Área de transferência", options.clipboard, permission.clipboard)
-            Capability("Arquivos", options.files, permission.files)
-            if (BuildConfig.NOTIFICATION_RELAY) {
-                Capability("Notificações", options.notificationMirror, permission.notifications)
-            }
+        Panel("Integrações") {
+            ToggleRow("Área de transferência", options.clipboard, onClipboard)
+            Muted(if (options.clipboard && !permission.clipboard) "Aguardando ativação no Mac" else "Texto e imagens")
+            HorizontalDivider()
+            AccessRow("Galeria", "Fotos e vídeos no Mac", "Abrir") { navigate(Tab.Settings) }
+        }
+    }
+}
+
+@Composable
+private fun QuickAction(title: String, icon: ImageVector, modifier: Modifier, action: () -> Unit) {
+    Card(onClick = action, modifier = modifier, shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(icon, null, Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
 @Composable
 private fun MacIllustration() {
-    val ink = MaterialTheme.colorScheme.onPrimaryContainer
-    Box(Modifier.size(84.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(73.dp)) {
-            val width = size.width
-            val stroke = 2.dp.toPx()
-            drawRoundRect(ink, Offset(width * 0.12f, width * 0.17f), Size(width * 0.76f, width * 0.51f),
-                CornerRadius(6.dp.toPx()), style = Stroke(stroke))
-            drawLine(ink, Offset(width * 0.07f, width * 0.77f), Offset(width * 0.93f, width * 0.77f), stroke)
-            drawLine(ink, Offset(width * 0.43f, width * 0.72f), Offset(width * 0.57f, width * 0.72f), stroke)
+    Box(Modifier.fillMaxWidth().height(148.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(196.dp, 136.dp)) {
+            val w = size.width
+            val h = size.height
+            val frame = Color(0xFF29264A)
+            drawRoundRect(frame, Offset(0f, h * .04f), Size(w, h * .76f), CornerRadius(9.dp.toPx()))
+            drawRoundRect(Brush.linearGradient(listOf(Color(0xFF819FFF), Color(0xFF493DC0))),
+                Offset(w * .035f, h * .085f), Size(w * .93f, h * .64f), CornerRadius(4.dp.toPx()))
+            drawRect(frame, Offset(w * .44f, h * .79f), Size(w * .12f, h * .15f))
+            drawRoundRect(frame, Offset(w * .31f, h * .92f), Size(w * .38f, h * .06f), CornerRadius(4.dp.toPx()))
         }
+        Icon(painterResource(R.drawable.ic_nexus), null, Modifier.padding(bottom = 22.dp).size(44.dp), tint = Color.White)
     }
 }
 
@@ -281,13 +330,12 @@ private fun Devices(nexus: NexusController, status: LocalClient.Status, backgrou
                     onConnection: () -> Unit) {
     var forget by remember { mutableStateOf<MacPeer?>(null) }
     Stack {
+        StatusCard(status.title, status.info)
         Panel("Parear Mac") {
             Muted("A câmera lê o QR gerado no Mac. Depois, confirme o nome deste celular no Mac.")
             Button(onClick = onQr) { Text("Ler QR") }
         }
         Panel("Conexão") {
-            Text(status.title, fontWeight = FontWeight.Medium)
-            Muted(status.info)
             Muted("Em segundo plano, o Android exibe uma notificação enquanto o Nexus permanece conectado.")
             OutlinedButton(onClick = onConnection) { Text(if (background) "Parar conexão em segundo plano" else "Manter conexão em segundo plano") }
         }
@@ -323,10 +371,50 @@ private fun SharePage(nexus: NexusController, status: LocalClient.Status, option
     val keyboard by nexus.keyboardSelected.collectAsStateWithLifecycle()
     val progress by nexus.transfers.progress.collectAsStateWithLifecycle()
     val received by nexus.transfers.received.collectAsStateWithLifecycle()
+    val sent by nexus.transfers.sent.collectAsStateWithLifecycle()
+    val transferPeer = status.connected?.id
     val transferFeedback by nexus.transfers.feedback.collectAsStateWithLifecycle()
     val connected = status.connected != null
+    val messages by nexus.messages.collectAsStateWithLifecycle()
+    val conversation = messages.filter { it.peer == status.connected?.id }
+    var draft by rememberSaveable(status.connected?.id) { mutableStateOf("") }
     var keyboardOptions by rememberSaveable { mutableStateOf(false) }
     Stack {
+        StatusCard(status.connected?.name ?: "Mac desconectado", status.title)
+        Panel("Conversa com o Mac") {
+            if (conversation.isEmpty()) Muted("As mensagens aparecem aqui.")
+            conversation.takeLast(30).forEach { entry ->
+                Column(modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = if (entry.outgoing) Alignment.End else Alignment.Start) {
+                    val colors = MaterialTheme.colorScheme
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (entry.outgoing) colors.primaryContainer else colors.surfaceVariant,
+                        contentColor = if (entry.outgoing) colors.onPrimaryContainer else colors.onSurfaceVariant
+                    ) {
+                        Text(entry.text, Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
+                    }
+                    if (entry.outgoing && !entry.confirmed) Muted("Sem confirmação")
+                }
+            }
+            received.filter { it.peer == transferPeer }.take(8).forEach { item ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(item.item.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    TextButton(onClick = { export(item.file, item.item.mime, item.item.name, false) }) { Text("Salvar") }
+                }
+            }
+            sent.filter { it.peer == transferPeer }.takeLast(8).forEach { item ->
+                Text(item.name, Modifier.align(Alignment.End), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            OutlinedTextField(value = draft, onValueChange = { draft = it.take(2048) },
+                label = { Text("Mensagem") }, modifier = Modifier.fillMaxWidth(), maxLines = 3)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(enabled = connected && permission.chat && draft.isNotBlank() && draft.toByteArray().size <= 2048,
+                    onClick = { if (nexus.sendChat(draft)) draft = "" }) { Text("Enviar mensagem") }
+                OutlinedButton(enabled = connected && options.files && permission.files,
+                    onClick = choose) { Text("Anexar arquivo") }
+            }
+        }
         if (shared != null) Panel("Compartilhado de outro aplicativo") {
             Muted("Arquivo pronto para enviar.")
             Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -397,7 +485,8 @@ private fun ScanPage(nexus: NexusController, documents: List<ScanLibrary.Documen
     val permission by nexus.permissions.collectAsStateWithLifecycle()
     val status by nexus.client.status.collectAsStateWithLifecycle()
     Stack {
-        Panel("Scanner de documentos") {
+        StatusCard("Scanner de documentos", "Capture uma página ou monte um PDF")
+        Panel("Nova digitalização") {
             Button(enabled = !busy, onClick = scan) { Text("Fotografar documento") }
             TextButton(enabled = !busy, onClick = advanced) { Text("Recortar e digitalizar várias páginas") }
             Muted("O scanner avançado usa o Google Play Services para recorte e filtros e pode enviar métricas técnicas ao Google.")
@@ -436,59 +525,149 @@ private fun ScanPage(nexus: NexusController, documents: List<ScanLibrary.Documen
 
 @Composable
 private fun SettingsPage(nexus: NexusController, options: NexusController.Options, openNotifications: () -> Unit,
-                         allowGallery: () -> Unit, background: Boolean, onConnection: () -> Unit) {
+                         allowGallery: () -> Unit, background: Boolean, onConnection: () -> Unit,
+                         keyboardSettings: () -> Unit, chooseKeyboard: () -> Unit,
+                         showAccess: Boolean, openAccess: () -> Unit, connected: Boolean) {
     val apps by nexus.apps.collectAsStateWithLifecycle()
+    val context = LocalView.current.context
+    var permissionRevision by remember { mutableStateOf(0) }
+    LifecycleResumeEffect(context) {
+        permissionRevision++
+        onPauseOrDispose {}
+    }
+    val camera = remember(context, permissionRevision) {
+        context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    }
+    val notifications = remember(context, permissionRevision) {
+        NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }
+    val notificationAccess = remember(context, permissionRevision) {
+        context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context)
+    }
+    fun openAppSettings() {
+        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", context.packageName, null)))
+    }
     Stack {
-        Panel("Aparência") {
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                listOf("system" to "Automático", "light" to "Claro", "dark" to "Escuro").forEach { (key, label) ->
-                    FilterChip(selected = options.theme == key, onClick = { nexus.update(options.copy(theme = key)) },
-                        label = { Text(label) })
+        if (showAccess) {
+            StatusCard(if (connected) "Mac conectado" else "Mac desconectado", "Veja o que cada recurso precisa")
+            Panel("Permissões do Android") {
+                AccessRow("Câmera", "Ler o QR de pareamento", if (camera) "Permitida" else "Permitir", ::openAppSettings)
+                HorizontalDivider()
+                val fullMedia = if (Build.VERSION.SDK_INT >= 33) {
+                    listOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO).all {
+                        context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
+                    }
+                } else context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+                val partialMedia = Build.VERSION.SDK_INT >= 34 &&
+                    context.checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED
+                AccessRow("Fotos e vídeos", "Abrir a galeria no Mac",
+                    when { fullMedia -> "Permitidos"; partialMedia -> "Acesso parcial"; else -> "Permitir" }, allowGallery)
+                HorizontalDivider()
+                AccessRow("Notificações do app", "Avisos de conexão e captura",
+                    if (notifications) "Permitidas" else "Permitir", ::openAppSettings)
+            }
+            Panel("Acessos especiais") {
+                if (BuildConfig.NOTIFICATION_RELAY) {
+                    AccessRow("Notificações de outros apps", "Espelhar avisos e controlar mídia",
+                        if (notificationAccess) "Permitidas" else "Configurar", openNotifications)
+                    OutlinedButton(onClick = {
+                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+                    }) { Text("Autorizar Não Perturbe") }
                 }
+                Muted("Autorize a captura de tela a cada sessão no Android.")
+                ToggleRow("Receber solicitações de espelhamento", options.mirror) { nexus.update(options.copy(mirror = it)) }
             }
-        }
-        if (BuildConfig.NOTIFICATION_RELAY) Panel("Notificações") {
-            Muted("O acesso permite ler notificações de outros aplicativos e responder quando houver uma ação de resposta. As notificações seguem para o Mac pareado.")
-            OutlinedButton(onClick = openNotifications) { Text("Revisar acesso às notificações") }
-            ToggleRow("Espelhar no Mac", options.notificationMirror) { nexus.update(options.copy(notificationMirror = it)) }
-            ToggleRow("Ocultar conteúdo", options.hideNotifications) { nexus.update(options.copy(hideNotifications = it)) }
-            apps.entries.sortedBy { it.value }.forEach { (id, label) ->
-                ToggleRow(label, id !in options.blockedApps) {
-                    val blocked = if (it) options.blockedApps - id else options.blockedApps + id
-                    nexus.update(options.copy(blockedApps = blocked))
-                }
-            }
-        }
-        Panel("Galeria") {
-            Muted("O Mac pareado poderá buscar e abrir a mídia que você autorizar. O Android 14 ou mais recente permite escolher itens específicos.")
-            ToggleRow("Disponibilizar galeria ao Mac", options.gallery) { enabled ->
-                if (enabled) allowGallery() else nexus.update(options.copy(gallery = false, syncNewMedia = false))
-            }
-            if (options.gallery) {
-                OutlinedButton(onClick = allowGallery) { Text("Revisar fotos e vídeos") }
-                Muted("Para ver a galeria com a tela bloqueada, mantenha a conexão em segundo plano. O Android mostra uma notificação durante a conexão.")
+            Panel("Configuração dos recursos") {
                 OutlinedButton(onClick = onConnection) {
                     Text(if (background) "Parar conexão em segundo plano" else "Manter conexão em segundo plano")
                 }
-                ToggleRow("Enviar novas fotos e vídeos ao Mac", options.syncNewMedia) {
-                    nexus.update(options.copy(syncNewMedia = it))
+                OutlinedButton(onClick = keyboardSettings) { Text("Ativar Teclado Nexus") }
+                OutlinedButton(onClick = chooseKeyboard) { Text("Escolher teclado") }
+                Muted("Para arquivos, galeria e área de transferência, ative a integração também no Mac. Para controle por Wi-Fi ou USB, configure a depuração no Android e no Mac.")
+            }
+        } else {
+            Panel("Permissões e acessos") {
+                Muted("Configure os acessos necessários para usar os recursos com o Mac.")
+                OutlinedButton(onClick = openAccess) { Text("Gerenciar permissões e acessos") }
+            }
+            Panel("Aparência") {
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    listOf("system" to "Automático", "light" to "Claro", "dark" to "Escuro").forEach { (key, label) ->
+                        FilterChip(selected = options.theme == key, onClick = { nexus.update(options.copy(theme = key)) },
+                            label = { Text(label) })
+                    }
+                }
+            }
+            if (BuildConfig.NOTIFICATION_RELAY) Panel("Notificações") {
+                val context = LocalView.current.context
+                Muted("O acesso permite ler notificações de outros aplicativos e responder quando houver uma ação de resposta. As notificações seguem para o Mac pareado.")
+                OutlinedButton(onClick = openNotifications) { Text("Revisar acesso às notificações") }
+                OutlinedButton(onClick = {
+                    context.startActivity(android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+                }) { Text("Autorizar controle do Não Perturbe") }
+                ToggleRow("Espelhar no Mac", options.notificationMirror) { nexus.update(options.copy(notificationMirror = it)) }
+                ToggleRow("Ocultar conteúdo", options.hideNotifications) { nexus.update(options.copy(hideNotifications = it)) }
+                apps.entries.sortedBy { it.value }.forEach { (id, label) ->
+                    ToggleRow(label, id !in options.blockedApps) {
+                        val blocked = if (it) options.blockedApps - id else options.blockedApps + id
+                        nexus.update(options.copy(blockedApps = blocked))
+                    }
+                }
+            }
+            Panel("Galeria") {
+                Muted("O Mac pareado poderá buscar e abrir a mídia que você autorizar. O Android 14 ou mais recente permite escolher itens específicos.")
+                ToggleRow("Disponibilizar galeria ao Mac", options.gallery) { enabled ->
+                    if (enabled) allowGallery() else nexus.update(options.copy(gallery = false, syncNewMedia = false))
+                }
+                if (options.gallery) {
+                    OutlinedButton(onClick = allowGallery) { Text("Revisar fotos e vídeos") }
+                    Muted("Para ver a galeria com a tela bloqueada, mantenha a conexão em segundo plano. O Android mostra uma notificação durante a conexão.")
+                    OutlinedButton(onClick = onConnection) {
+                        Text(if (background) "Parar conexão em segundo plano" else "Manter conexão em segundo plano")
+                    }
+                    ToggleRow("Enviar novas fotos e vídeos ao Mac", options.syncNewMedia) {
+                        nexus.update(options.copy(syncNewMedia = it))
+                    }
+                }
+            }
+            Panel("Espelhamento") {
+                Muted("O Android mostra um pedido do sistema a cada sessão e mantém um indicador durante a captura.")
+                ToggleRow("Receber solicitações de espelhamento", options.mirror) { nexus.update(options.copy(mirror = it)) }
+            }
+            Panel("Ações remotas") {
+                Muted("O Mac pareado pode tocar o telefone.")
+                ToggleRow("Permitir localizar por toque", options.findPhone) { nexus.update(options.copy(findPhone = it)) }
+                if (BuildConfig.NOTIFICATION_RELAY) {
+                    ToggleRow("Permitir controle de mídia", options.mediaControl) { nexus.update(options.copy(mediaControl = it)) }
                 }
             }
         }
-        Panel("Espelhamento") {
-            Muted("O Android mostra um pedido do sistema a cada sessão e mantém um indicador durante a captura.")
-            ToggleRow("Receber solicitações de espelhamento", options.mirror) { nexus.update(options.copy(mirror = it)) }
+    }
+}
+
+@Composable
+private fun AccessRow(title: String, subtitle: String, actionLabel: String, action: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Muted(subtitle)
         }
-        Panel("Ações remotas") {
-            Muted("O Mac pareado pode tocar o telefone.")
-            ToggleRow("Permitir localizar por toque", options.findPhone) { nexus.update(options.copy(findPhone = it)) }
-            if (BuildConfig.NOTIFICATION_RELAY) {
-                ToggleRow("Permitir controle de mídia", options.mediaControl) { nexus.update(options.copy(mediaControl = it)) }
+        TextButton(onClick = action) { Text(actionLabel) }
+    }
+}
+
+@Composable
+private fun StatusCard(title: String, subtitle: String) {
+    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(22.dp)) {
+        Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(painterResource(R.drawable.ic_nexus), null, Modifier.size(28.dp))
+            Column {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Muted(subtitle)
             }
-        }
-        Panel("Permissões") {
-            Muted("Rede local conecta ao Mac. A câmera lê o QR. Arquivos usam o seletor do Android. O scanner mostra a câmera após você iniciar ou autorizar uma solicitação.")
-            Muted("Adicione o bloco Nexus masterSync ao editar as configurações rápidas para abrir Compartilhar.")
         }
     }
 }
@@ -505,7 +684,7 @@ private fun Stack(content: @Composable ColumnScope.() -> Unit) =
 
 @Composable
 private fun Panel(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+    Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.semantics { heading() })
@@ -517,14 +696,6 @@ private fun Panel(title: String, content: @Composable ColumnScope.() -> Unit) {
 @Composable
 private fun Muted(text: String) {
     Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-}
-
-@Composable
-private fun Capability(title: String, enabled: Boolean, remote: Boolean) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(title, Modifier.weight(1f))
-        Muted(if (!enabled) "Desativado" else if (remote) "Ativo" else "Aguardando Mac")
-    }
 }
 
 @Composable

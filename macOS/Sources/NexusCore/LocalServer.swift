@@ -55,6 +55,12 @@ public final class LocalServer {
         }
     }
 
+    public static func temporary() throws -> LocalServer {
+        // An independent TLS identity and peer list live only for this process.
+        try LocalServer(identity: TLSIdentity.ephemeral(), id: Wire.id(),
+                        name: Wire.visible(Host.current().localizedName ?? "Mac"), peers: []) { _ in }
+    }
+
     init(identity: TLSIdentity, id: String, name: String, peers: [Peer], savePeers: @escaping ([Peer]) throws -> Void) {
         self.identity = identity
         self.id = id

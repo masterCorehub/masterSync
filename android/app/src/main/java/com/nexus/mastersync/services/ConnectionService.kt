@@ -16,7 +16,9 @@ class ConnectionService : Service() {
     private val nexus get() = (application as NexusApplication).nexus
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == "stop") {
+        if (intent?.action == "stop") nexus.requestBackgroundConnection(false)
+        if (!nexus.backgroundRequested) {
+            nexus.setBackground(false)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -29,7 +31,7 @@ class ConnectionService : Service() {
         val notification = Notification.Builder(this, "connection")
             .setSmallIcon(R.drawable.ic_nexus)
             .setContentTitle("Nexus masterSync ativo")
-            .setContentText("O Nexus está disponível para o Mac na rede local.")
+            .setContentText("O MasterSync mantém a conexão com o Mac em segundo plano.")
             .setOngoing(true)
             .setContentIntent(open)
             .addAction(Notification.Action.Builder(null, "Parar", stop).build())

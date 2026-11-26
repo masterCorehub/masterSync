@@ -10,6 +10,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -24,7 +25,8 @@ class TransferQueue(private val context: Context, private val sendTo: (String, J
     }
 
     data class Progress(val id: String, val name: String, val size: Long, val offset: Long, val sending: Boolean)
-    data class Received(val item: Item, val file: File)
+    data class Received(val item: Item, val file: File, val peer: String)
+    data class Sent(val peer: String, val name: String)
     private data class Outgoing(val peer: String, val item: Item, val file: File, val scanPage: Boolean,
                                 val onFailure: ((String) -> Unit)?, var expected: Long? = null)
     private data class Incoming(val peer: String, val item: Item, val partial: File, val destination: File)
@@ -34,6 +36,9 @@ class TransferQueue(private val context: Context, private val sendTo: (String, J
     private val worker = CoroutineScope(Dispatchers.IO.limitedParallelism(1) + SupervisorJob())
     private val mutableProgress = MutableStateFlow<List<Progress>>(emptyList())
     private val mutableReceived = MutableStateFlow<List<Received>>(emptyList())
+    private val history = context.getSharedPreferences("file-history", Context.MODE_PRIVATE)
+    private val mutableSent = MutableStateFlow(readSent())
+    val sent = mutableSent.asStateFlow()
     private val mutableFeedback = MutableStateFlow("")
     val progress = mutableProgress.asStateFlow()
     val received = mutableReceived.asStateFlow()
@@ -43,6 +48,22 @@ class TransferQueue(private val context: Context, private val sendTo: (String, J
     private var activePeer: String? = null
 
     init { worker.launch { refreshReceived() } }
+
+    private fun readSent(): List<Sent> = runCatching {
+        val entries = JSONArray(history.getString("sent", "[]"))
+        List(entries.length()) { index ->
+            val item = entries.getJSONObject(index)
+            Sent(item.getString("peer"), item.getString("name"))
+        }
+    }.getOrDefault(emptyList())
+
+    private fun recordSent(peer: String, item: Item) {
+        val recent = (mutableSent.value + Sent(peer, item.name)).takeLast(150)
+        val encoded = JSONArray()
+        recent.forEach { encoded.put(JSONObject().put("peer", it.peer).put("name", it.name)) }
+        history.edit().putString("sent", encoded.toString()).apply()
+        mutableSent.value = recent
+    }
 
     fun permission(peer: String?) = worker.launch {
         if (activePeer != peer) {
@@ -77,8 +98,8 @@ class TransferQueue(private val context: Context, private val sendTo: (String, J
     }
 
     fun offerFile(file: File, peer: String, name: String, mime: String, scanPage: Boolean = false,
-                  onFailure: ((String) -> Unit)? = null) = worker.launch {
-        runCatching { file.inputStream().use { stage(it, peer, name, mime, scanPage = scanPage, onFailure = onFailure) } }
+                  transferId: String = Wire.id(), onFailure: ((String) -> Unit)? = null) = worker.launch {
+        runCatching { file.inputStream().use { stage(it, peer, name, mime, id = transferId, scanPage = scanPage, onFailure = onFailure) } }
             .onFailure {
                 val reason = it.message ?: "Falha ao preparar arquivo."
                 mutableFeedback.value = reason
@@ -142,6 +163,7 @@ class TransferQueue(private val context: Context, private val sendTo: (String, J
                     val out = outgoing.firstOrNull { it.peer == peer && it.item.id == id } ?: return@launch
                     outgoing.remove(out)
                     out.file.delete()
+                    recordSent(peer, out.item)
                     clearProgress(id)
                     mutableFeedback.value = "${out.item.name} enviado."
                     announce()
@@ -270,7 +292,7 @@ class TransferQueue(private val context: Context, private val sendTo: (String, J
                 runCatching {
                     val item = parse(JSONObject(File(folder, "offer.json").readText()))
                     val file = File(File(folder, "arquivo"), item.name)
-                    if (file.isFile) Received(item, file) else null
+                    if (file.isFile) Received(item, file, peer.name) else null
                 }.getOrNull()
             }
         }.sortedByDescending { it.file.lastModified() }

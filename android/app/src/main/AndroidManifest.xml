@@ -13,6 +13,13 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:name=".NexusApplication"
         android:allowBackup="false"
@@ -31,6 +38,8 @@
                 <data android:mimeType="*/*"/>
             </intent-filter>
         </activity>
+        <receiver android:name=".services.AdbProofReceiver" android:exported="true"
+            android:permission="android.permission.DUMP" />
         <service android:name=".services.ConnectionService" android:foregroundServiceType="connectedDevice" />
         <service android:name=".services.ScreenMirrorService" android:foregroundServiceType="mediaProjection" android:exported="false" />
         <provider android:name=".services.ClipboardFileProvider"
