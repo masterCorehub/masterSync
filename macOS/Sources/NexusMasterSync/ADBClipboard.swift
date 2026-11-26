@@ -48,6 +48,9 @@ final class ADBClipboard: ObservableObject {
     @Published private(set) var wirelessSetupError: String?
 
     var receive: ((ADBClipboardEvent) -> Void)?
+    /// Where the phone is on the network right now (its saved port on its current IP), so a network change is followed.
+    var addressProvider: ((ADBWirelessDevice) -> String?)?
+    fileprivate func freshAddress(for device: ADBWirelessDevice) -> String? { addressProvider?(device) }
     /// Called when a running session ends on its own (not when the user stops it).
     var onEnded: (() -> Void)?
     /// The user stopped the sync; automatic start waits until they start it again.
@@ -141,7 +144,11 @@ final class ADBClipboard: ObservableObject {
             }
 
             var wasReady = false
+            var failures = 0
+            var repairedAt = -3
             while !Task.isCancelled {
+                // The phone may have changed networks since the address was saved.
+                if let fresh = await self?.freshAddress(for: target) { target.address = fresh }
                 do {
                     let serial = try await session.wirelessSerial(for: target)
                     let identity = try session.hardwareID(serial: serial)
@@ -150,6 +157,7 @@ final class ADBClipboard: ObservableObject {
                     let confirmed = target
                     try await session.listen(serial: serial, helper: helper, onReady: { [weak self] in
                         wasReady = true
+                        failures = 0
                         await self?.ready(session, transport: .wifi, device: confirmed)
                     }, onEvent: { [weak self] event in
                         await self?.accept(event, from: session)
@@ -157,13 +165,28 @@ final class ADBClipboard: ObservableObject {
                 } catch ADBWirelessError.changedDevice {
                     throw ADBWirelessError.changedDevice
                 } catch {
-                    if !wasReady || Task.isCancelled { throw error }
+                    // A phone already verified once is looked for again, saying why; a first setup reports its error.
+                    if (!wasReady && target.deviceID == nil) || Task.isCancelled { throw error }
+                    failures += 1
+                    let usbSerial = session.usbSerial(matching: target.deviceID)
+                    switch ADBRecovery.next(failures: failures, usbDeviceAttached: usbSerial != nil) {
+                    case .retry(let text), .waitForCable(let text):
+                        await self?.update(session, status: text)
+                    case .repairOverUSB(let text):
+                        await self?.update(session, status: text)
+                        if failures - repairedAt >= 3, let usbSerial {
+                            repairedAt = failures
+                            let saved = ADBAddress.port(of: target.address) ?? 5555
+                            try? session.enableTCPIP(serial: usbSerial, port: saved >= 1024 ? saved : 5555)
+                            try? await Task.sleep(for: .seconds(2))
+                        }
+                    }
                 }
                 guard !Task.isCancelled else { return }
                 // Reconnect only when there is a stable identity for the device already selected.
                 guard target.service != nil || target.deviceID != nil else { return }
                 if target.deviceID == nil { target.address = nil }
-                await self?.update(session, status: "Reconectando ao mesmo celular pelo Wi-Fi…")
+                if failures == 0 { await self?.update(session, status: "Reconectando ao mesmo celular pelo Wi-Fi…") }
                 try await Task.sleep(for: .seconds(3))
             }
         }
@@ -280,6 +303,19 @@ final class ADBClipboardSession: @unchecked Sendable {
         guard result.1 == 0 else {
             throw NexusError.transfer("O Android não recebeu o comando. Confira a conexão ADB.")
         }
+    }
+
+    /// The serial of [id] when that phone is on a cable and authorized, so its ADB can be switched back to Wi-Fi.
+    func usbSerial(matching id: String?) -> String? {
+        guard let id, let output = try? capture(["devices"]) else { return nil }
+        return ADBAddress.usbSerials(from: String(decoding: output.0, as: UTF8.self)).first { $0 == id }
+    }
+
+    /// Makes the phone listen for ADB on [port] over the network again (it stops after a reboot).
+    func enableTCPIP(serial: String, port: Int) throws {
+        guard let arguments = Self.tcpipArguments(serial: serial, port: port) else { throw NexusError.invalidFrame }
+        let result = try capture(arguments)
+        guard result.1 == 0 else { throw NexusError.transfer("O Android não aceitou reativar o ADB pelo cabo.") }
     }
 
     func usbSerial() throws -> String {
