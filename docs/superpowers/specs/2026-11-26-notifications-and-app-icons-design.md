@@ -80,3 +80,32 @@ Desbloqueado, nada muda.
 
 - Uma notificação fixa ocultada no Mac reaparecer sozinha sem ter mudado.
 - O conteúdo aparecer no Mac quando a tela de bloqueio do Android o esconde.
+
+## Adendo (aprovado no chat): área de transferência automática e atalhos personalizáveis
+
+### 6. Sincronização Android → Mac pelo Wi-Fi liga sozinha
+
+- **Causa:** a sessão ADB de leitura da área de transferência só começa no clique em "Ativar sincronização Wi-Fi" ou ao ligar a chave. Ela não retoma quando o app abre, quando o celular conecta nem depois de uma queda. Por isso só a cópia com o MasterSync aberto no celular chega ao Mac.
+- **Quando liga sozinha.** A sessão Wi-Fi começa automaticamente quando todas estas condições valem:
+  - a área de transferência está ligada no Mac;
+  - há um celular salvo para o Wi-Fi (`wirelessDevice`);
+  - esse celular é o peer conectado;
+  - nenhuma sessão está rodando;
+  - o usuário não pausou.
+- **Momentos em que o Mac confere:**
+  - na abertura do app;
+  - quando o peer conecta;
+  - ao ligar a área de transferência;
+  - depois de uma queda, com nova tentativa a cada 15 s enquanto as condições valerem.
+- **Pausa.** "Parar sincronização" pausa, e a pausa é persistida. Ativar manualmente (Wi-Fi ou USB) tira a pausa.
+- **Falha de conexão.** O status explica que, depois de reiniciar o celular, é preciso conectar o cabo uma vez para reativar o ADB pelo Wi-Fi.
+
+### 7. Atalhos personalizáveis
+
+- O card "Atalhos de teclado" vira **"Atalhos"** e ganha a linha **"Digitalizar e colar"**:
+  - um campo gravador: clique, aperte a combinação; Esc cancela;
+  - o botão "Padrão" volta a ⌃⌥⌘D.
+- A combinação precisa ter ⌘, ⌃ ou ⌥. Ela é persistida.
+- Se o registro global falhar, aparece "Em uso por outro app" e a combinação anterior continua.
+- Os seletores existentes de Dispositivos e Arquivos (⇧⌘ + letra) ficam no mesmo card.
+- O rótulo do atalho é mostrado onde hoje aparece ⌃⌥⌘D.

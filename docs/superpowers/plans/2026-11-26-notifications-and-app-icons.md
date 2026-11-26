@@ -282,3 +282,39 @@ func testScanCameraRejectsInvalidId()               // scanCameraArguments(..., 
 - [ ] Fixar um app no Mac mostra o ícone dele, com o nome no hover.
 - [ ] "Controlar" abre o scrcpy sem pedir nada no celular. Bloquear o celular deixa a janela aberta com a tela de bloqueio.
 - [ ] ⌃⌥⌘D com o celular desbloqueado abre a câmera direto, sem o aviso. A foto chega ao Mac e é colada.
+
+---
+
+### Task 8: Área de transferência pelo Wi-Fi liga sozinha (Mac)
+
+**Files:**
+- Modify: `macOS/Sources/NexusMasterSync/ADBClipboard.swift`
+  - `paused` persistido em `"adb-clipboard-paused"`;
+  - `stop(userInitiated: Bool = false)`;
+  - `startWiFi`/`startUSB` tiram a pausa;
+  - novo `var onEnded: (() -> Void)?`, chamado em `ended`;
+  - `nonisolated static func shouldAutoStart(clipboardEnabled: Bool, device: ADBWirelessDevice?, connectedPeer: String?, running: Bool, paused: Bool) -> Bool`.
+- Modify: `macOS/Sources/NexusMasterSync/NexusModel.swift`
+  - `func autoStartClipboardSync()`, chamado na abertura, quando um peer fica online, quando `clipboardEnabled` liga e em `onEnded` (retry de 15 s).
+- Modify: `macOS/Sources/NexusMasterSync/Dashboard.swift`, o botão "Parar sincronização…", que passa a chamar `stop(userInitiated: true)`.
+- Test: `macOS/Tests/NexusCoreTests/ClipboardAutoStartTests.swift`, com `testAutoStartsOnlyWhenEverythingHolds`: a tabela das 5 condições, e só tudo verdadeiro (com `device.peerID == connectedPeer`) dá `true`.
+
+### Task 9: Atalhos personalizáveis (Mac)
+
+**Files:**
+- Create: `macOS/Sources/NexusMasterSync/KeyCombo.swift`
+  - `struct KeyCombo: Codable, Equatable { let keyCode: UInt32; let modifiers: UInt32; let key: String }`, onde `modifiers` está em Carbon;
+  - `static let scanDefault` (D, ⌃⌥⌘);
+  - `var label: String` na ordem ⌃⌥⇧⌘ + tecla;
+  - `static func carbonModifiers(_ flags: NSEvent.ModifierFlags) -> UInt32`;
+  - `init?(keyCode: UInt16, flags: NSEvent.ModifierFlags, key: String)`, que devolve nil sem ⌘, ⌃ ou ⌥.
+- Modify: `macOS/Sources/NexusMasterSync/ScanPasteShortcut.swift`, onde `register(_ combo: KeyCombo) -> Bool` substitui o D fixo.
+- Modify: `macOS/Sources/NexusMasterSync/NexusModel.swift`, com `@Published var scanShortcut: KeyCombo` persistido em `"shortcut-scan"`. Se o registro falhar, o modelo volta para a combinação anterior e mostra o feedback "Em uso por outro app".
+- Modify: `macOS/Sources/NexusMasterSync/Dashboard.swift`
+  - o card "Atalhos" com um gravador (monitor local de keyDown e Esc);
+  - os rótulos usam `model.scanShortcut.label`.
+- Test: `macOS/Tests/NexusCoreTests/KeyComboTests.swift`
+  - `testLabelOrder`: ⌃⌥⌘D → "⌃⌥⌘D";
+  - `testRequiresCommandControlOrOption`: só ⇧ → nil;
+  - `testCarbonModifiers`: cada flag vira a constante Carbon;
+  - `testCodableRoundTrip`.
