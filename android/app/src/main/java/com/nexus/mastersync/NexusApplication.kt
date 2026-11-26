@@ -458,7 +458,11 @@ class NexusController(val context: Context) {
                 val argument = if (message.has("queueId")) message.optLong("queueId") else message.optLong("positionMs", -1)
                 listener?.media(message.optString("message"), argument)?.let { result ->
                     client.sendTo(peer, Wire.message("actionStatus").put("message", result))
-                    listener?.mediaStatus()?.let { client.sendTo(peer, it) }
+                    // Players apply seek and rating a moment later; report after that, not the position they had.
+                    main.launch {
+                        kotlinx.coroutines.delay(400)
+                        listener?.mediaStatus()?.let { client.sendTo(peer, it) }
+                    }
                 }
             }
             "screenRequest" -> {

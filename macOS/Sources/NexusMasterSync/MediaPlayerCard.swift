@@ -23,6 +23,9 @@ struct MediaPlayerCard: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var showingQueue = false
     @State private var scrubbing: Double?
+    @State private var scrubGeneration = 0
+    @State private var likedOverride: Bool?
+    @State private var likeGeneration = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -73,13 +76,21 @@ struct MediaPlayerCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if let state, state.canLike {
-                Button { onLike(!state.liked) } label: {
-                    Image(systemName: state.liked ? "heart.fill" : "heart").font(.title3)
-                        .foregroundStyle(state.liked ? palette.accent : palette.muted)
+                let liked = likedOverride ?? state.liked
+                Button {
+                    // Show the new heart at once and keep it until the player has reported it back.
+                    likedOverride = !liked
+                    likeGeneration += 1
+                    let generation = likeGeneration
+                    onLike(!liked)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { if likeGeneration == generation { likedOverride = nil } }
+                } label: {
+                    Image(systemName: liked ? "heart.fill" : "heart").font(.title3)
+                        .foregroundStyle(liked ? palette.accent : palette.muted)
                 }
                 .buttonStyle(.plain).disabled(!canControl)
-                .help(state.liked ? "Remover dos favoritos" : "Favoritar")
-                .accessibilityLabel(state.liked ? "Remover dos favoritos" : "Favoritar")
+                .help(liked ? "Remover dos favoritos" : "Favoritar")
+                .accessibilityLabel(liked ? "Remover dos favoritos" : "Favoritar")
             }
         }
         .padding(20)
@@ -139,12 +150,15 @@ struct MediaPlayerCard: View {
             .buttonStyle(NexusPillStyle(selected: output == target, compact: true, segmented: true))
             .disabled(connecting || !canChooseOutput)
             .accessibilityAddTraits(output == target ? .isSelected : [])
-            .help(target == .mac ? "Ouvir o áudio do celular no Mac" : "Ouvir no celular")
+            .help(!canChooseOutput ? "O áudio está no controle remoto. Encerre-o para trocar a saída."
+                  : target == .mac ? "Ouvir o áudio do celular no Mac" : "Ouvir no celular")
     }
 
     private func transport(_ state: MediaPlayerState) -> some View {
         HStack(spacing: 26) {
             transportButton("backward.end.fill", "Anterior") { onCommand("previous") }
+            // Without a known state both actions are offered, as the old panel did.
+            if state.playing == nil { transportButton("pause.fill", "Pausar") { onCommand("pause") } }
             let playing = state.playing == true
             Button { onCommand(playing ? "pause" : "play") } label: {
                 Image(systemName: playing ? "pause.fill" : "play.fill").font(.title3)
@@ -180,14 +194,21 @@ struct MediaPlayerCard: View {
                         .monospacedDigit()
                     if state.canSeek && canControl {
                         Slider(value: Binding(get: { scrubbing ?? now }, set: { scrubbing = $0 }), in: 0...1) { editing in
-                            if !editing, let target = scrubbing {
+                            if editing {
+                                scrubGeneration += 1
+                            } else if let target = scrubbing {
                                 onSeek(target)
-                                // Keep the thumb where it was dropped until the next status arrives.
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { scrubbing = nil }
+                                // Keep the thumb where it was dropped until the player has reported the new position,
+                                // unless the user grabbed it again in the meantime.
+                                let generation = scrubGeneration
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                                    if scrubGeneration == generation { scrubbing = nil }
+                                }
                             }
                         }
                         .tint(palette.accent)
                         .accessibilityLabel("Posição da faixa")
+                        .accessibilityValue("\(MediaPlayerState.clock(state.position(at: context.date))) de \(MediaPlayerState.clock(duration))")
                     } else {
                         ProgressView(value: now).tint(palette.accent)
                     }

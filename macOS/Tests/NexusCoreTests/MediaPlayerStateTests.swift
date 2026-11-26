@@ -112,4 +112,25 @@ final class MediaPlayerStateTests: XCTestCase {
         XCTAssertEqual(MediaOutput.current(audioOnlyActive: true), .mac)
         XCTAssertEqual(MediaOutput.current(audioOnlyActive: false), .phone)
     }
+
+    func testOutputIsTheMacWhileTheControlWindowRuns() {
+        XCTAssertEqual(MediaOutput.current(audioOnlyActive: false, controlActive: true), .mac)
+        XCTAssertEqual(MediaOutput.current(audioOnlyActive: false, controlActive: false), .phone)
+    }
+
+    func testHostileNumbersDoNotTrap() {
+        var message = full()
+        message.speed = .infinity
+        message.positionMs = .max
+        message.durationMs = nil
+        let state = MediaPlayerState(message: message, receivedAt: start)
+        let day: Int64 = 24 * 3600 * 1000
+        XCTAssertLessThanOrEqual(state.position(at: start.addingTimeInterval(1e12)), day * 9)
+        message.speed = 1e300
+        message.positionMs = .min
+        let other = MediaPlayerState(message: message, receivedAt: start)
+        XCTAssertGreaterThanOrEqual(other.position(at: start.addingTimeInterval(5)), 0)
+        message.speed = .nan
+        XCTAssertGreaterThanOrEqual(MediaPlayerState(message: message, receivedAt: start).position(at: start), 0)
+    }
 }

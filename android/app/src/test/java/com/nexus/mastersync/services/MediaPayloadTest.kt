@@ -66,6 +66,16 @@ class MediaPayloadTest {
         assertEquals("Abracadabra", json.getString("name"))
     }
 
+    @Test fun artReplyAlwaysCarriesTheKeyEvenWithoutAnImage() {
+        val empty = MediaPayload.artReply("abc", null)
+        assertEquals("mediaArt", empty.getString("type"))
+        assertEquals("abc", empty.getString("artKey"))
+        assertFalse(empty.has("data"))
+        val full = MediaPayload.artReply("abc", "QUJD")
+        assertEquals("image/jpeg", full.getString("mime"))
+        assertEquals("QUJD", full.getString("data"))
+    }
+
     @Test fun likedIsReportedOnlyWhenLikingIsPossible() {
         assertTrue(MediaPayload.status(snapshot(canLike = true, liked = true), 0).getBoolean("liked"))
         assertFalse(MediaPayload.status(snapshot(canLike = false, liked = true), 0).has("liked"))

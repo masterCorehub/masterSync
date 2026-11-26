@@ -36,8 +36,9 @@ struct MediaPlayerState: Equatable {
         default: trackLine = nil
         }
         durationMs = message.durationMs.flatMap { $0 > 0 ? $0 : nil }
-        positionMs = message.positionMs ?? 0
-        speed = message.speed ?? 1
+        // Numbers come from the phone: bound them so arithmetic on them can never trap.
+        positionMs = min(max(message.positionMs ?? 0, 0), Self.maxMs)
+        speed = message.speed.flatMap { $0.isFinite ? min(8, max(-8, $0)) : nil } ?? 1
         playing = message.playing
         self.receivedAt = receivedAt
         artKey = text(message.artKey)
@@ -49,10 +50,14 @@ struct MediaPlayerState: Equatable {
 
     /// Where the track is at [date]: it moves on by itself while playing, and never leaves 0...duration.
     func position(at date: Date) -> Int64 {
-        let elapsed = playing == true ? Int64(date.timeIntervalSince(receivedAt) * 1000 * speed) : 0
-        let moved = max(0, positionMs + elapsed)
+        let seconds = min(Double(Self.maxMs) / 1000, max(0, date.timeIntervalSince(receivedAt)))
+        let elapsed = playing == true ? Int64(seconds * 1000 * speed) : 0
+        let moved = min(Self.maxMs, max(0, positionMs + elapsed))
         return durationMs.map { min(moved, $0) } ?? moved
     }
+
+    /// A day: far beyond any track, and small enough that no arithmetic here can overflow.
+    private nonisolated static let maxMs: Int64 = 24 * 3600 * 1000
 
     func fraction(at date: Date) -> Double {
         guard let durationMs else { return 0 }
@@ -75,5 +80,8 @@ struct MediaPlayerState: Equatable {
 enum MediaOutput: Equatable {
     case phone, mac
 
-    nonisolated static func current(audioOnlyActive: Bool) -> MediaOutput { audioOnlyActive ? .mac : .phone }
+    /// The remote-control window also plays the phone's sound on the Mac, so it counts as the Mac output.
+    nonisolated static func current(audioOnlyActive: Bool, controlActive: Bool = false) -> MediaOutput {
+        audioOnlyActive || controlActive ? .mac : .phone
+    }
 }

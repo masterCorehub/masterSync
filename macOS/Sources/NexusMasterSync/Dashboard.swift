@@ -409,7 +409,7 @@ struct Dashboard: View {
     private var audioPanel: some View {
         let screen = model.screen
         let state = model.currentMediaState
-        let output = MediaOutput.current(audioOnlyActive: screen.audioOnlyActive)
+        let output = MediaOutput.current(audioOnlyActive: screen.audioOnlyActive, controlActive: screen.usbActive)
         return VStack(alignment: .leading, spacing: 11) {
             MediaPlayerCard(
                 state: state, art: state?.artKey.flatMap { model.mediaArt[$0] }, queue: model.mediaQueue,

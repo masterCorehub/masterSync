@@ -12,9 +12,18 @@ enum MediaCommands {
     }
 
     /// Ask for a cover once per track: not when there is no key, and not when it is cached or already asked for.
-    nonisolated static func shouldRequestArt(key: String?, cached: Set<String>, pending: Set<String>) -> Bool {
-        guard let key, !key.isEmpty else { return false }
+    nonisolated static let maxArtAttempts = 4
+
+    /// A few attempts, because the phone may not have the picture yet when the track starts.
+    nonisolated static func shouldRequestArt(key: String?, cached: Set<String>, pending: Set<String>, attempts: Int = 0) -> Bool {
+        guard let key, !key.isEmpty, attempts < maxArtAttempts else { return false }
         return !cached.contains(key) && !pending.contains(key)
+    }
+
+    /// A queue item id is only meaningful on the phone that listed it.
+    nonisolated static func queueBelongs(queuePeer: String?, selected: String?) -> Bool {
+        guard let queuePeer, let selected else { return false }
+        return queuePeer == selected
     }
 
     /// The cover bytes, only if they belong to the track playing now and are a small, decodable image.

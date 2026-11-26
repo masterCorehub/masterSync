@@ -30,6 +30,11 @@ object MediaPayload {
         return if (durationMs > 0) minOf(floored, durationMs) else floored
     }
 
+    /** The answer to a cover request. It always names the track, so the Mac stops waiting even when there is no image. */
+    fun artReply(key: String, jpegBase64: String?): JSONObject = JSONObject().put("type", "mediaArt").put("artKey", key).apply {
+        if (jpegBase64 != null) put("mime", "image/jpeg").put("data", jpegBase64)
+    }
+
     fun status(snapshot: MediaSnapshot, now: Long): JSONObject = JSONObject().apply {
         put("type", "mediaStatus")
         fun text(key: String, value: String?) { value?.trim()?.takeIf { it.isNotEmpty() }?.let { put(key, it.take(MAX_TEXT)) } }

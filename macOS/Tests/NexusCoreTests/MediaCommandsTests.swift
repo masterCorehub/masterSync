@@ -25,6 +25,18 @@ final class MediaCommandsTests: XCTestCase {
         XCTAssertFalse(MediaCommands.shouldRequestArt(key: "", cached: [], pending: []))
     }
 
+    func testArtRetriesAreBounded() {
+        XCTAssertTrue(MediaCommands.shouldRequestArt(key: "k", cached: [], pending: [], attempts: 3))
+        XCTAssertFalse(MediaCommands.shouldRequestArt(key: "k", cached: [], pending: [], attempts: 4))
+    }
+
+    func testQueueItemsOnlyGoToThePhoneTheyCameFrom() {
+        XCTAssertTrue(MediaCommands.queueBelongs(queuePeer: "a", selected: "a"))
+        XCTAssertFalse(MediaCommands.queueBelongs(queuePeer: "a", selected: "b"))
+        XCTAssertFalse(MediaCommands.queueBelongs(queuePeer: nil, selected: "b"))
+        XCTAssertFalse(MediaCommands.queueBelongs(queuePeer: "a", selected: nil))
+    }
+
     private func pngBase64() throws -> String {
         let rep = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 4, pixelsHigh: 4, bitsPerSample: 8,
                                                  samplesPerPixel: 4, hasAlpha: true, isPlanar: false,

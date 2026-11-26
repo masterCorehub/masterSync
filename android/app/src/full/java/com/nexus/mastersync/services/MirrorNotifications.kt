@@ -307,17 +307,21 @@ class MirrorNotifications : NotificationListenerService(), NotificationRelay {
     }.getOrDefault("Autorize o acesso às notificações para controlar a mídia.")
 
     /** The cover of the track playing now, as a small JPEG; null when [key] is no longer the current track. */
-    override fun mediaArt(key: String): JSONObject? = runCatching {
-        val metadata = activeSession()?.metadata ?: return null
-        val current = MediaPayload.artKey(title(metadata), artist(metadata), metadata.getString(MediaMetadata.METADATA_KEY_ALBUM))
-        if (key.isEmpty() || key != current) return null
-        val source = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-            ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART) ?: return null
-        val bytes = listOf(256 to 80, 256 to 60, 192 to 60).firstNotNullOfOrNull { (edge, quality) ->
-            jpeg(source, edge, quality)?.takeIf { it.size <= MAX_ART_BYTES }
-        } ?: return null
-        Wire.message("mediaArt").put("artKey", key).put("mime", "image/jpeg").put("data", Wire.encode(bytes))
-    }.getOrNull()
+    override fun mediaArt(key: String): JSONObject? {
+        val encoded = runCatching {
+            val metadata = activeSession()?.metadata ?: return@runCatching null
+            val current = MediaPayload.artKey(title(metadata), artist(metadata), metadata.getString(MediaMetadata.METADATA_KEY_ALBUM))
+            if (key.isEmpty() || key != current) return@runCatching null
+            val source = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART) ?: return@runCatching null
+            listOf(256 to 80, 256 to 60, 192 to 60).firstNotNullOfOrNull { (edge, quality) ->
+                jpeg(source, edge, quality)?.takeIf { it.size <= MAX_ART_BYTES }
+            }?.let(Wire::encode)
+        }.getOrNull()
+        // Players often publish a track's metadata before its bitmap; answering without an image lets the Mac ask again.
+        val reply = MediaPayload.artReply(key, encoded)
+        return Wire.message("mediaArt").apply { reply.keys().forEach { if (it != "type") put(it, reply.get(it)) } }
+    }
 
     private fun jpeg(source: Bitmap, edge: Int, quality: Int): ByteArray? = runCatching {
         val scale = minOf(1f, edge.toFloat() / maxOf(source.width, source.height))

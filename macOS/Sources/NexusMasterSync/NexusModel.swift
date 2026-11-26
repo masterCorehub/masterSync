@@ -164,6 +164,8 @@ final class NexusModel: ObservableObject {
     /// Covers by track key, and the keys already asked for, so each cover is requested once.
     @Published private(set) var mediaArt: [String: NSImage] = [:]
     private var pendingMediaArt: Set<String> = []
+    private var mediaArtAttempts: [String: Int] = [:]
+    private var mediaQueuePeer: String?
     @Published private(set) var mediaQueue: [MediaQueueItem] = []
     @Published private(set) var mediaQueueActive: Int64?
 
@@ -608,18 +610,25 @@ final class NexusModel: ObservableObject {
 
     func mediaQueueRefresh() {
         guard canPlayMedia, let peer = selected, currentMediaState?.hasQueue == true else { return }
+        // Never show a previous list (or another phone's) while the new one is on its way.
+        mediaQueue = []
+        mediaQueueActive = nil
+        mediaQueuePeer = nil
         server?.send(Message("mediaQueueRequest"), to: peer.id)
     }
 
     func mediaPlay(queueItem item: MediaQueueItem) {
-        guard canPlayMedia, let peer = selected else { return }
+        guard canPlayMedia, let peer = selected,
+              MediaCommands.queueBelongs(queuePeer: mediaQueuePeer, selected: peer.id) else { return }
         server?.send(MediaCommands.command("queueItem", queueId: item.id), to: peer.id)
     }
 
     private func requestMediaArtIfNeeded(for message: Message, peer: String) {
         let key = MediaPlayerState(message: message, receivedAt: .now).artKey
-        guard MediaCommands.shouldRequestArt(key: key, cached: Set(mediaArt.keys), pending: pendingMediaArt), let key else { return }
+        guard MediaCommands.shouldRequestArt(key: key, cached: Set(mediaArt.keys), pending: pendingMediaArt,
+                                             attempts: mediaArtAttempts[key ?? ""] ?? 0), let key else { return }
         pendingMediaArt.insert(key)
+        mediaArtAttempts[key, default: 0] += 1
         var request = Message("mediaArtRequest")
         request.artKey = key
         server?.send(request, to: peer)
@@ -876,7 +885,9 @@ final class NexusModel: ObservableObject {
             if id == selected?.id {
                 mediaQueue = []
                 mediaQueueActive = nil
+                mediaQueuePeer = nil
                 pendingMediaArt = []
+                mediaArtAttempts = [:]
             }
             screen.disconnect(id)
             files.disconnect(id)
@@ -969,12 +980,14 @@ final class NexusModel: ObservableObject {
                    let image = NSImage(data: data) {
                     if mediaArt.count >= 20 { mediaArt.removeAll() }
                     mediaArt[key] = image
+                    mediaArtAttempts[key] = nil
                 }
             }
         case "mediaQueue":
             if permissions[peer]?.mediaControl == true, peer == selected?.id {
                 mediaQueue = Array((message.queue ?? []).prefix(30))
                 mediaQueueActive = message.queueId
+                mediaQueuePeer = peer
             }
         case "actionStatus":
             actionFeedback = Wire.visible(message.message ?? "", limit: 130)
