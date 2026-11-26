@@ -9,7 +9,8 @@ object NoticePrivacy {
      * Content is hidden when the user asked for it, when the app marked it secret, or when the phone is
      * locked and Android's own lock screen would hide it too.
      */
-    fun redact(hideAll: Boolean, visibility: Int, locked: Boolean, lockscreenAllowsPrivate: Boolean): Boolean =
+    fun redact(hideAll: Boolean, visibility: Int, locked: Boolean, lockscreenAllowsPrivate: Boolean,
+               lockscreenShowsNotifications: Boolean): Boolean =
         hideAll || visibility == VISIBILITY_SECRET ||
-            (locked && !lockscreenAllowsPrivate && visibility != VISIBILITY_PUBLIC)
+            (locked && (!lockscreenShowsNotifications || (!lockscreenAllowsPrivate && visibility != VISIBILITY_PUBLIC)))
 }

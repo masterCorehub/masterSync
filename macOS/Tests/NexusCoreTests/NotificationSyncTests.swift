@@ -81,6 +81,31 @@ final class NotificationSyncTests: XCTestCase {
         XCTAssertEqual(sync.notices.map(\.remoteID), ["new"])
     }
 
+    @MainActor func testHiddenNoticeSurvivesReconnect() throws {
+        let sync = visibleSync()
+        sync.handle(notice("fixed", at: 10, canDismiss: false), peer: "phone")
+        sync.hide(try XCTUnwrap(sync.notices.first))
+        sync.removePeer("phone")
+
+        var snapshot = Message("noticeSnapshot")
+        snapshot.id = Wire.id()
+        snapshot.offset = 0
+        snapshot.more = false
+        snapshot.notices = [notice("fixed", at: 10, canDismiss: false)]
+        sync.handle(snapshot, peer: "phone")
+        XCTAssertTrue(sync.notices.isEmpty)
+    }
+
+    @MainActor func testRedactedRepostKeepsHiddenNoticeHidden() throws {
+        let sync = visibleSync()
+        sync.handle(notice("fixed", at: 10, canDismiss: false, text: "tocando"), peer: "phone")
+        sync.hide(try XCTUnwrap(sync.notices.first))
+        var locked = notice("fixed", at: 11, canDismiss: false, text: "")
+        locked.name = "Notificação recebida"
+        sync.handle(locked, peer: "phone")
+        XCTAssertTrue(sync.notices.isEmpty)
+    }
+
     @MainActor func testClearAllDismissesClearableAndHidesFixed() {
         let sync = visibleSync()
         var sent: [(String, Message)] = []

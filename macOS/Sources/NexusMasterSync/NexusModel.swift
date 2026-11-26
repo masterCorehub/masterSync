@@ -560,6 +560,7 @@ final class NexusModel: ObservableObject {
     /// Icons of pinned Android apps, by component, kept across launches.
     @Published private(set) var launcherIcons: [String: NSImage] = NexusModel.loadLauncherIcons()
     private var requestedIcons: Set<String> = []
+    private var lastIconRequest: (pins: [String], components: [String])?
 
     nonisolated static let maxIconRequest = 24
 
@@ -591,12 +592,13 @@ final class NexusModel: ObservableObject {
         let missing = Self.missingIcons(pins: pins.filter(listed.contains), cached: Set(launcherIcons.keys).union(requestedIcons))
         guard !missing.isEmpty else { return }
         requestedIcons.formUnion(missing)
+        lastIconRequest = (pins, missing)
         var message = Message("launcherIconsRequest")
         message.components = missing
         server?.send(message, to: peer)
     }
 
-    private func receiveLauncherIcons(_ icons: [AndroidAppIcon], peer: String) {
+    private func receiveLauncherIcons(_ icons: [AndroidAppIcon], peer: String, message: Message) {
         let known = Set((launcherLists[peer] ?? []).map(\.id))
         var stored = (UserDefaults.standard.data(forKey: "launcher-icons"))
             .flatMap { try? JSONDecoder().decode([String: Data].self, from: $0) } ?? [:]
@@ -606,6 +608,12 @@ final class NexusModel: ObservableObject {
             stored[icon.component] = data
         }
         UserDefaults.standard.set(try? JSONEncoder().encode(stored), forKey: "launcher-icons")
+        // Android stops before the frame limit and says so; ask again for the ones it left out.
+        if message.more == true, !icons.isEmpty, let last = lastIconRequest {
+            let answered = Set(icons.map(\.component))
+            requestedIcons.subtract(last.components.filter { !answered.contains($0) })
+            requestLauncherIcons(for: last.pins)
+        }
     }
 
     var launcherAvailable: Bool {
@@ -839,7 +847,7 @@ final class NexusModel: ObservableObject {
             }
         case "launcherIcons":
             if permissions[peer]?.launcher == true, let icons = message.launcherIcons {
-                receiveLauncherIcons(icons, peer: peer)
+                receiveLauncherIcons(icons, peer: peer, message: message)
             }
         case "adbProofReady":
             if online.contains(peer), let nonce = message.id, Wire.validID(nonce) {

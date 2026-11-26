@@ -273,6 +273,15 @@ struct Dashboard: View {
         (try? JSONDecoder().decode([String: [String]].self, from: storedLauncherPins)) ?? [:]
     }
 
+    private func setPinned(_ id: String, peer: String, pinned: Bool) {
+        var saved = launcherPins
+        var ids = saved[peer] ?? []
+        ids.removeAll { $0 == id }
+        if pinned { ids.append(id) }
+        saved[peer] = ids
+        if let data = try? JSONEncoder().encode(saved) { storedLauncherPins = data }
+    }
+
     private var canLaunchApps: Bool {
         model.canMirror && model.wirelessControlDevice(for: model.selected?.id) != nil
             && !model.screen.preparingControl
@@ -295,25 +304,16 @@ struct Dashboard: View {
             .popover(isPresented: $showingLauncher, arrowEdge: .bottom) {
                 launcherPopover(apps: apps, peer: peer, pins: pins)
             }
-            if !pinnedApps.isEmpty {
+            let withIcon = pinnedApps.filter { model.launcherIcons[$0.id] != nil }
+            let withoutIcon = pinnedApps.filter { model.launcherIcons[$0.id] == nil }
+            if !withIcon.isEmpty {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 8)], alignment: .leading, spacing: 8) {
-                    ForEach(pinnedApps) { app in
-                        let label = Wire.visible(app.label, limit: 70)
-                        Button { model.launchAndroidApp(app) } label: {
-                            if let icon = model.launcherIcons[app.id] {
-                                Image(nsImage: icon).resizable().interpolation(.high).scaledToFit()
-                                    .frame(width: 32, height: 32)
-                            } else {
-                                Text(label).lineLimit(1).padding(.horizontal, 10).frame(minHeight: 31)
-                                    .background(palette.control.opacity(0.72), in: Capsule())
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .help(label)
-                        .accessibilityLabel(label)
-                        .disabled(!canLaunchApps)
-                        .opacity(canLaunchApps ? 1 : 0.45)
-                    }
+                    ForEach(withIcon) { app in pinnedAppButton(app, peer: peer) }
+                }
+            }
+            if !withoutIcon.isEmpty {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], alignment: .leading, spacing: 8) {
+                    ForEach(withoutIcon) { app in pinnedAppButton(app, peer: peer) }
                 }
             }
         }
@@ -322,6 +322,25 @@ struct Dashboard: View {
             model.requestLauncherIcons(for: pins)
         }
         .onChange(of: peer) { _, _ in showingLauncher = false }
+    }
+
+    private func pinnedAppButton(_ app: AndroidApp, peer: String) -> some View {
+        let label = Wire.visible(app.label, limit: 70)
+        return Button { model.launchAndroidApp(app) } label: {
+            if let icon = model.launcherIcons[app.id] {
+                Image(nsImage: icon).resizable().interpolation(.high).scaledToFit()
+                    .frame(width: 32, height: 32)
+            } else {
+                Text(label).lineLimit(1).frame(maxWidth: .infinity)
+            }
+        }
+        .buttonStyle(model.launcherIcons[app.id] == nil ? NexusPillStyle(compact: true) : NexusPillStyle(compact: true, segmented: true))
+        .help(label)
+        .accessibilityLabel(label)
+        .disabled(!canLaunchApps)
+        .contextMenu {
+            Button("Desafixar", systemImage: "pin.slash") { setPinned(app.id, peer: peer, pinned: false) }
+        }
     }
 
     private func launcherPopover(apps: [AndroidApp], peer: String, pins: [String]) -> some View {
@@ -369,14 +388,8 @@ struct Dashboard: View {
                                             .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                                     }
                                     .buttonStyle(.plain).disabled(!canLaunchApps)
-                                    Button {
-                                        var saved = launcherPins
-                                        var ids = saved[peer] ?? []
-                                        if pinned { ids.removeAll { $0 == app.id } }
-                                        else { ids.append(app.id) }
-                                        saved[peer] = ids
-                                        if let data = try? JSONEncoder().encode(saved) { storedLauncherPins = data }
-                                    } label: { Image(systemName: pinned ? "pin.fill" : "pin") }
+                                    Button { setPinned(app.id, peer: peer, pinned: !pinned) }
+                                    label: { Image(systemName: pinned ? "pin.fill" : "pin") }
                                     .buttonStyle(NexusPillStyle(compact: true))
                                     .help(pinned ? "Desafixar app" : "Fixar app")
                                     .accessibilityLabel(pinned ? "Desafixar app" : "Fixar app")

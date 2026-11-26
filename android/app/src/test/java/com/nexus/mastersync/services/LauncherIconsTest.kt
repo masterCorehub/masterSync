@@ -20,4 +20,17 @@ class LauncherIconsTest {
         assertEquals(LauncherIcons.MAX, LauncherIcons.requested(request(*Array(30) { "app.n$it/.Main" })).size)
 
     @Test fun missingArrayIsEmpty() = assertTrue(LauncherIcons.requested(JSONObject()).isEmpty())
+
+    @Test fun budgetStopsBeforeFrameLimit() {
+        val icons = List(30) { "app.n$it/.Main" to "A".repeat(12_000) }
+        val (kept, more) = LauncherIcons.withinBudget(icons)
+        assertTrue(more)
+        assertTrue(kept.sumOf { it.first.length + it.second.length + 40 } <= LauncherIcons.BUDGET)
+        assertEquals(icons.take(kept.size), kept)
+    }
+
+    @Test fun smallIconsAllFit() {
+        val icons = List(24) { "app.n$it/.Main" to "A".repeat(4_000) }
+        assertEquals(icons to false, LauncherIcons.withinBudget(icons))
+    }
 }
