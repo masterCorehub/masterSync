@@ -68,7 +68,7 @@ final class NexusModel: ObservableObject {
     @Published private(set) var permissions: [String: Message] = [:]
     @Published var selectedID: String? {
         didSet {
-            if oldValue != selectedID { screen.end(); screen.stopUSB() }
+            if oldValue != selectedID { screen.endAll(); screen.stopUSB() }
             advertiseCapabilities()
         }
     }
@@ -288,7 +288,7 @@ final class NexusModel: ObservableObject {
         if quitObserver == nil {
             quitObserver = NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification).sink { [weak self] _ in
                 self?.clearShareDestination()
-                self?.screen.end()
+                self?.screen.endAll(wait: true)
                 self?.screen.stopUSB()
                 self?.adbClipboard.stop()
                 self?.server?.stop()

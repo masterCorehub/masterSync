@@ -74,6 +74,7 @@ struct NexusApp: App {
                 } else {
                     Text("Nenhum celular conectado").foregroundStyle(.secondary)
                 }
+                if model.screen.inAppControl { Button("Encerrar controle") { model.screen.endAll() } }
                 if model.screen.sharing { Button("Parar espelhamento") { model.screen.end() } }
                 if model.screen.usbActive { Button("Encerrar sessão do scrcpy") { model.screen.stopUSB() } }
                 Divider()

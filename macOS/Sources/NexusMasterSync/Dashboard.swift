@@ -557,7 +557,7 @@ struct Dashboard: View {
                                 .font(.caption).foregroundStyle(.white)
                         } else {
                             embeddedControlButton
-                            if !model.canMirror {
+                            if !model.canMirror && !(model.screen.inAppAvailable && model.wirelessControlDevice(for: model.selected?.id) != nil) {
                                 Text(model.active ? "Autorize o espelhamento no Android." : "Conecte seu Android para começar.")
                                     .font(.caption).foregroundStyle(.white.opacity(0.75))
                                     .multilineTextAlignment(.center)
@@ -573,15 +573,16 @@ struct Dashboard: View {
             .overlay { RoundedRectangle(cornerRadius: 27).strokeBorder(palette.border, lineWidth: 2).allowsHitTesting(false) }
             HStack(spacing: 10) {
                 Button { screen.pressSystemKey(home: false) } label: { Image(systemName: "chevron.left") }
-                    .accessibilityLabel("Voltar no Android")
+                    .accessibilityLabel("Voltar no Android").disabled(!controlActive)
                 Button { screen.pressSystemKey(home: true) } label: { Image(systemName: "circle") }
-                    .accessibilityLabel("Tela inicial do Android")
-                Button { screen.end() } label: { Image(systemName: "stop.fill") }
+                    .accessibilityLabel("Tela inicial do Android").disabled(!controlActive)
+                Button { screen.endAll() } label: { Image(systemName: "stop.fill") }
                     .accessibilityLabel("Encerrar controle").help("Encerrar controle")
+                    .disabled(!(controlActive || screen.inAppStarting))
             }
             .buttonStyle(NexusPillStyle(compact: true))
-            .disabled(!controlActive)
-            .opacity(controlActive ? 1 : 0)
+            .disabled(!controlActive && !screen.inAppStarting)
+            .opacity(controlActive || screen.inAppStarting ? 1 : 0)
         }
     }
 
@@ -1405,7 +1406,8 @@ struct Dashboard: View {
                             screen.beginControl(guidePeer, wireless: device)
                         }
                     }
-                    .disabled((!model.canMirror || screen.sharing || screen.preparingControl) && !testingGuideControl)
+                    .disabled((!model.canMirror || screen.sharing || screen.preparingControl || screen.inAppControl || screen.inAppStarting)
+                              && !testingGuideControl)
                     Button(screen.audioOnlyActive && testingGuideAudio ? "Parar áudio" : "Testar áudio") {
                         if screen.audioOnlyActive {
                             screen.stopUSB()

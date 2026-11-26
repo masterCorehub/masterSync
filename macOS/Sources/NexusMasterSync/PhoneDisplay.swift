@@ -127,11 +127,15 @@ struct PhoneDisplay: NSViewRepresentable {
 
 final class PhoneDisplayView: NSView {
     private let model: PhoneDisplayModel
+    /// The model's layer is shared by whichever view shows it; it is a sublayer here, never this view's own layer, so a view
+    /// that goes away cannot take it from another that took it over.
+    private let videoLayer: CALayer
     private var touching = false
     private var lastPoint: (x: Int32, y: Int32)?
 
     init(model: PhoneDisplayModel) {
         self.model = model
+        videoLayer = MainActor.assumeIsolated { model.layer }
         super.init(frame: .zero)
         wantsLayer = true
     }
@@ -140,8 +144,35 @@ final class PhoneDisplayView: NSView {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
-    override func makeBackingLayer() -> CALayer { MainActor.assumeIsolated { model.layer } }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func makeBackingLayer() -> CALayer {
+        let layer = CALayer()
+        layer.backgroundColor = NSColor.black.cgColor
+        return layer
+    }
+
+    private func layoutVideo() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        videoLayer.frame = bounds
+        CATransaction.commit()
+    }
+
+    override func layout() {
+        super.layout()
+        layoutVideo()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            if videoLayer.superlayer !== layer { layer?.addSublayer(videoLayer) }
+            layoutVideo()
+        } else if videoLayer.superlayer === layer {
+            videoLayer.removeFromSuperlayer()
+        }
+    }
 
     private var videoSize: CGSize { MainActor.assumeIsolated { model.videoSize } }
 
@@ -193,8 +224,9 @@ final class PhoneDisplayView: NSView {
         let size = videoSize
         // Trackpads report pixels; a wheel step is about ten of them.
         let unit: CGFloat = event.hasPreciseScrollingDeltas ? 10 : 1
+        // macOS counts horizontal scrolling to the left as positive; the phone counts it to the right.
         send(ScrcpyControl.scroll(x: point.x, y: point.y, width: UInt16(size.width), height: UInt16(size.height),
-                                  horizontal: Float(event.scrollingDeltaX / unit), vertical: Float(event.scrollingDeltaY / unit)))
+                                  horizontal: Float(-event.scrollingDeltaX / unit), vertical: Float(event.scrollingDeltaY / unit)))
     }
 
     override func keyDown(with event: NSEvent) {
@@ -204,12 +236,15 @@ final class PhoneDisplayView: NSView {
         }
         let keys: [UInt16: Int32] = [36: ScrcpyControl.Key.enter, 76: ScrcpyControl.Key.enter, 51: ScrcpyControl.Key.delete,
                                      48: ScrcpyControl.Key.tab, 53: ScrcpyControl.Key.back, 123: ScrcpyControl.Key.dpadLeft,
-                                     124: ScrcpyControl.Key.dpadRight, 125: ScrcpyControl.Key.dpadDown, 126: ScrcpyControl.Key.dpadUp]
+                                     124: ScrcpyControl.Key.dpadRight, 125: ScrcpyControl.Key.dpadDown, 126: ScrcpyControl.Key.dpadUp,
+                                     117: ScrcpyControl.Key.forwardDelete, 115: ScrcpyControl.Key.moveHome,
+                                     119: ScrcpyControl.Key.moveEnd, 116: ScrcpyControl.Key.pageUp, 121: ScrcpyControl.Key.pageDown]
         if let key = keys[event.keyCode] {
             send(ScrcpyControl.keycode(action: ScrcpyControl.Action.down, keycode: key))
             send(ScrcpyControl.keycode(action: ScrcpyControl.Action.up, keycode: key))
         } else if let text = event.characters, let message = ScrcpyControl.text(text),
-                  text.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) {
+                  // Function keys and the like arrive as private-use characters, which are not text.
+                  text.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) && !(0xF700...0xF8FF).contains($0.value) }) {
             send(message)
         }
     }

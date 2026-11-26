@@ -34,18 +34,18 @@ struct ScrcpyStreamParser {
 
     private var available: Int { buffer.count - head }
 
-    private mutating func take(_ count: Int) -> ArraySlice<UInt8> {
-        defer {
-            head += count
-            // Drop what was consumed once it is a meaningful part of the buffer.
-            if head == buffer.count { buffer.removeAll(keepingCapacity: true); head = 0 }
-            else if head > 1 << 20 { buffer.removeFirst(head); head = 0 }
-        }
-        return buffer[head..<head + count]
+    /// The next [count] bytes, copied out first so that compacting the buffer never has to copy it all again.
+    private mutating func take(_ count: Int) -> [UInt8] {
+        let bytes = Array(buffer[head..<head + count])
+        head += count
+        // Drop what was consumed once it is a meaningful part of the buffer.
+        if head == buffer.count { buffer.removeAll(keepingCapacity: true); head = 0 }
+        else if head > 1 << 20 { buffer.removeFirst(head); head = 0 }
+        return bytes
     }
 
-    private static func be32(_ bytes: ArraySlice<UInt8>) -> UInt32 { bytes.reduce(0) { $0 << 8 | UInt32($1) } }
-    private static func be64(_ bytes: ArraySlice<UInt8>) -> UInt64 { bytes.reduce(0) { $0 << 8 | UInt64($1) } }
+    private static func be32(_ bytes: some Sequence<UInt8>) -> UInt32 { bytes.reduce(0) { $0 << 8 | UInt32($1) } }
+    private static func be64(_ bytes: some Sequence<UInt8>) -> UInt64 { bytes.reduce(0) { $0 << 8 | UInt64($1) } }
 
     mutating func feed(_ data: Data) throws -> [ScrcpyEvent] {
         buffer.append(contentsOf: data)
@@ -58,7 +58,7 @@ struct ScrcpyStreamParser {
                 state = .name
             case .name:
                 guard available >= 64 else { return events }
-                let field = Array(take(64))
+                let field = take(64)
                 let end = field.firstIndex(of: 0) ?? field.count
                 events.append(.deviceName(String(decoding: field[..<end], as: UTF8.self)))
                 state = .codec
@@ -69,7 +69,7 @@ struct ScrcpyStreamParser {
                 state = .header
             case .header:
                 guard available >= 12 else { return events }
-                let header = Array(take(12))
+                let header = take(12)
                 if header[0] & 0x80 != 0 {
                     let width = Int(Self.be32(header[4..<8])), height = Int(Self.be32(header[8..<12]))
                     guard (1...Self.maxDimension).contains(width), (1...Self.maxDimension).contains(height) else {

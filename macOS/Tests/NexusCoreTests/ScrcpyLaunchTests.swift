@@ -10,12 +10,26 @@ final class ScrcpyLaunchTests: XCTestCase {
     func testServerArgumentsMatchTheProtocol() throws {
         let arguments = try XCTUnwrap(ScrcpyLaunch.serverArguments(version: "5.0.1", scid: 0x1234ABCD, maxSize: 1600, maxFPS: 60, bitRate: 8_000_000))
         XCTAssertEqual(arguments, [
-            "CLASSPATH=/data/local/tmp/scrcpy-server.jar", "app_process", "/", "com.genymobile.scrcpy.Server", "5.0.1",
+            "CLASSPATH=/data/local/tmp/scrcpy-server-1234abcd.jar", "app_process", "/", "com.genymobile.scrcpy.Server", "5.0.1",
             "scid=1234abcd", "log_level=info", "tunnel_forward=true", "audio=false", "control=true", "video_codec=h264",
             "max_size=1600", "max_fps=60", "video_bit_rate=8000000", "clipboard_autosync=false", "cleanup=true"])
         XCTAssertNil(ScrcpyLaunch.serverArguments(version: "5.0.1; rm -rf /", scid: 1, maxSize: 1, maxFPS: 1, bitRate: 1))
         XCTAssertNil(ScrcpyLaunch.serverArguments(version: "", scid: 1, maxSize: 1, maxFPS: 1, bitRate: 1))
         XCTAssertNil(ScrcpyLaunch.serverArguments(version: "5..", scid: 1, maxSize: 1, maxFPS: 1, bitRate: 1))
+    }
+
+    func testEachSessionHasItsOwnJarPath() {
+        XCTAssertEqual(ScrcpyLaunch.jarPath(scid: 0xABC), "/data/local/tmp/scrcpy-server-00000abc.jar")
+        XCTAssertNotEqual(ScrcpyLaunch.jarPath(scid: 1), ScrcpyLaunch.jarPath(scid: 2))
+    }
+
+    func testOnlyTheProtocolWeKnowIsSupported() {
+        XCTAssertTrue(ScrcpyLaunch.isSupported(version: "5.0.1"))
+        XCTAssertTrue(ScrcpyLaunch.isSupported(version: "5.0"))
+        XCTAssertTrue(ScrcpyLaunch.isSupported(version: "5.0.12"))
+        for version in ["4.0", "3.3.1", "5.1.0", "6.0.0", "5", "", "5.0.1; rm", "50.0.1", "5.00.1"] {
+            XCTAssertFalse(ScrcpyLaunch.isSupported(version: version), version)
+        }
     }
 
     func testServerURLFollowsTheInstallLayout() throws {

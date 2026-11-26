@@ -19,9 +19,20 @@ final class ScreenMirror: ObservableObject {
     let display = PhoneDisplayModel()
     @Published private(set) var inAppControl = false
     @Published private(set) var inAppStarting = false
+    /// ADB, the scrcpy server file and a scrcpy version whose protocol this app speaks. Checked once, off the main thread.
+    @Published private(set) var inAppAvailable = false
     private var inAppClient: ScrcpyClient?
 
-    var inAppAvailable: Bool { adbPath != nil && scrcpyPath.flatMap(ScrcpyLaunch.serverURL(forScrcpy:)) != nil }
+    init() { refreshInAppAvailability() }
+
+    func refreshInAppAvailability() {
+        guard adbPath != nil, let scrcpy = scrcpyPath else { return }
+        Task.detached { [weak self] in
+            let supported = ScrcpyLaunch.serverURL(forScrcpy: scrcpy) != nil
+                && ScrcpyLaunch.installedVersion(of: scrcpy).map(ScrcpyLaunch.isSupported(version:)) == true
+            await MainActor.run { self?.inAppAvailable = supported }
+        }
+    }
 
     func beginInAppControl(wireless: ADBWirelessDevice) {
         guard !inAppControl, !inAppStarting else { return }
@@ -63,10 +74,10 @@ final class ScreenMirror: ObservableObject {
         }
     }
 
-    func endInAppControl() {
+    func endInAppControl(wait: Bool = false) {
         let client = inAppClient
         inAppClient = nil
-        client?.stop()
+        client?.stop(wait: wait)
         inAppControl = false
         inAppStarting = false
         display.reset()
@@ -259,10 +270,16 @@ final class ScreenMirror: ObservableObject {
         if self.peer == peer { clear("O celular foi desconectado.") }
     }
 
+    /// Stops the phone's own screen sharing (preview and the old control path). In-app control is separate.
     func end() {
-        endInAppControl()
         if let peer { send?(peer, Message("screenStop")) }
         clear(nil)
+    }
+
+    /// Stops everything that shows the phone here: in-app control and screen sharing.
+    func endAll(wait: Bool = false) {
+        endInAppControl(wait: wait)
+        end()
     }
 
     func receive(_ message: Message, from peer: String) {

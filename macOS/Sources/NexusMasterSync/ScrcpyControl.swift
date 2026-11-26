@@ -21,6 +21,11 @@ enum ScrcpyControl {
         nonisolated static let delete: Int32 = 67
         nonisolated static let appSwitch: Int32 = 187
         nonisolated static let tab: Int32 = 61
+        nonisolated static let forwardDelete: Int32 = 112
+        nonisolated static let moveHome: Int32 = 122
+        nonisolated static let moveEnd: Int32 = 123
+        nonisolated static let pageUp: Int32 = 92
+        nonisolated static let pageDown: Int32 = 93
         nonisolated static let dpadUp: Int32 = 19
         nonisolated static let dpadDown: Int32 = 20
         nonisolated static let dpadLeft: Int32 = 21
