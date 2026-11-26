@@ -424,6 +424,12 @@ class NexusController(val context: Context) {
                     }
                 client.sendTo(peer, Wire.message("launcherApps").put("launcherApps", apps))
             }
+            "launcherIconsRequest" -> {
+                val components = com.nexus.mastersync.services.LauncherIcons.requested(message)
+                if (components.isEmpty()) return
+                client.sendTo(peer, Wire.message("launcherIcons")
+                    .put("launcherIcons", com.nexus.mastersync.services.LauncherIcons.render(context, components)))
+            }
             "adbProof" -> {
                 val nonce = message.optString("id")
                 if (!Wire.validID(nonce)) return
