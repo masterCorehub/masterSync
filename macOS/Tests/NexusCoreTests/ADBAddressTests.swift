@@ -7,6 +7,23 @@ final class ADBAddressTests: XCTestCase {
         XCTAssertEqual(ADBAddress.rebased("10.0.0.2:33113", onto: "10.0.0.9"), "10.0.0.9:33113")
     }
 
+    func testRebasedAddressRejectsHostsThatAreNeverTheTarget() {
+        XCTAssertNil(ADBAddress.rebased("192.168.0.235:5555", onto: "127.0.0.1"))
+        XCTAssertNil(ADBAddress.rebased("192.168.0.235:5555", onto: "169.254.10.2"))
+        XCTAssertNil(ADBAddress.rebased("192.168.0.235:5555", onto: "0.0.0.0"))
+    }
+
+    func testCandidateAlternatesBetweenTheFreshAndTheSavedAddress() {
+        let saved = "192.168.0.235:5555"
+        XCTAssertEqual(ADBAddress.candidate(saved: saved, host: "192.168.3.31", attempt: 0), "192.168.3.31:5555")
+        XCTAssertEqual(ADBAddress.candidate(saved: saved, host: "192.168.3.31", attempt: 1), saved)
+        XCTAssertEqual(ADBAddress.candidate(saved: saved, host: "192.168.3.31", attempt: 2), "192.168.3.31:5555")
+        // Nothing new to try: always the saved one.
+        XCTAssertEqual(ADBAddress.candidate(saved: saved, host: nil, attempt: 0), saved)
+        XCTAssertEqual(ADBAddress.candidate(saved: saved, host: "192.168.0.235", attempt: 3), saved)
+        XCTAssertNil(ADBAddress.candidate(saved: nil, host: "192.168.3.31", attempt: 0))
+    }
+
     func testRebasedAddressIgnoresTheSameHost() {
         XCTAssertNil(ADBAddress.rebased("192.168.3.31:5555", onto: "192.168.3.31"))
     }
@@ -41,13 +58,35 @@ final class ADBAddressTests: XCTestCase {
         XCTAssertEqual(ADBAddress.usbSerials(from: ""), [])
     }
 
-    func testRecoverySteps() {
-        XCTAssertEqual(ADBRecovery.next(failures: 0, usbDeviceAttached: false), .retry(status: "Procurando o celular nesta rede…"))
-        XCTAssertEqual(ADBRecovery.next(failures: 1, usbDeviceAttached: true), .retry(status: "Procurando o celular nesta rede…"))
-        XCTAssertEqual(ADBRecovery.next(failures: 2, usbDeviceAttached: true), .repairOverUSB(status: "Reativando o ADB do celular pelo cabo…"))
+    private func step(_ failures: Int, usb: String? = nil, hostKnown: Bool = true, address: String? = "192.168.3.31:5555",
+                      repairedFor: String? = nil) -> ADBRecovery.Step {
+        ADBRecovery.next(failures: failures, usbSerial: usb, hostKnown: hostKnown, address: address, repairedFor: repairedFor)
+    }
+
+    func testRecoveryStepsWithoutACable() {
+        XCTAssertEqual(step(0), .retry(status: "Procurando o celular nesta rede…"))
+        XCTAssertEqual(step(1), .retry(status: "Procurando o celular nesta rede…"))
         let wait = "Não achei o ADB do celular nesta rede. Conecte o cabo uma vez: o Mac reativa sozinho."
-        XCTAssertEqual(ADBRecovery.next(failures: 2, usbDeviceAttached: false), .waitForCable(status: wait))
-        XCTAssertEqual(ADBRecovery.next(failures: 9, usbDeviceAttached: false), .waitForCable(status: wait))
+        XCTAssertEqual(step(2), .waitForCable(status: wait))
+        XCTAssertEqual(step(9), .waitForCable(status: wait))
+    }
+
+    func testRepairHappensOncePerCableAndAddress() {
+        let key = ADBRecovery.repairKey(serial: "RQ", address: "192.168.3.31:5555")
+        XCTAssertEqual(step(2, usb: "RQ"), .repairOverUSB(status: "Reativando o ADB do celular pelo cabo…", key: key))
+        XCTAssertEqual(step(1, usb: "RQ"), .retry(status: "Procurando o celular nesta rede…"))
+        // Already repaired for this cable and address: do not restart the phone's ADB again.
+        let tried = "O celular está no cabo, mas não respondeu pelo Wi-Fi. Confira se o celular e o Mac estão na mesma rede."
+        XCTAssertEqual(step(5, usb: "RQ", repairedFor: key), .retry(status: tried))
+        // A new address is a new situation.
+        XCTAssertEqual(step(5, usb: "RQ", address: "10.0.0.9:5555", repairedFor: key),
+                       .repairOverUSB(status: "Reativando o ADB do celular pelo cabo…",
+                                      key: ADBRecovery.repairKey(serial: "RQ", address: "10.0.0.9:5555")))
+    }
+
+    func testNoRepairWhileThePhoneIsNotOnThisNetwork() {
+        XCTAssertEqual(step(4, usb: "RQ", hostKnown: false),
+                       .retry(status: "Abra o MasterSync no celular, conectado à mesma rede do Mac."))
     }
 
     func testTCPIPArgumentsAreValidated() {

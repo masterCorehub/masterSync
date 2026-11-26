@@ -15,13 +15,16 @@ O celular, porém, continua em contato com o Mac pelo MasterSync na rede nova, e
 ## Design
 
 1. **O Mac aprende o IP de cada celular pela conexão do MasterSync.** O `LocalServer` guarda o endereço IPv4 de origem da conexão de cada celular e o apaga quando ele desconecta. Endereços IPv6 são ignorados, e um IPv4 embutido em IPv6 (`::ffff:a.b.c.d`) vira IPv4.
-2. **A sincronização usa o endereço atualizado.** A cada tentativa, o laço da sincronização pelo Wi-Fi pede ao modelo o endereço atual: o IP novo do celular com a **porta já guardada**. Quando a conexão funciona, o endereço novo é salvo, como já acontece hoje.
+2. **A sincronização usa o endereço atualizado.** A cada tentativa, o laço pede ao modelo o IP atual do celular e tenta o IP novo com a **porta já guardada**. Se não responder, a tentativa seguinte volta ao endereço guardado (as duas se alternam), porque o IP do MasterSync nem sempre é onde o ADB responde (VPN, NAT). Loopback, link-local e `0.0.0.0` nunca são alvo. Quando a conexão funciona, o endereço é salvo, como já acontece hoje.
 3. **A sincronização não desiste de um celular conhecido.** Se o aparelho já foi verificado antes (tem `deviceID`), o laço continua tentando e informa o motivo, em vez de terminar ou ficar mudo. Primeiro uso, sem `deviceID`, continua falhando com erro, como hoje.
-4. **Reparo pelo cabo, sozinho.** Depois de 2 falhas seguidas, se o celular com o mesmo `deviceID` estiver no USB, o Mac executa `adb -s <serial> tcpip <porta>` e tenta de novo (a porta é a guardada, ou 5555).
+4. **Reparo pelo cabo, sozinho, uma vez.** Depois de 2 falhas de **conexão** seguidas, se o celular com o mesmo `deviceID` estiver no USB **e** o celular estiver conectado ao Mac pelo MasterSync nesta rede, o Mac executa `adb -s <serial> tcpip <porta>` (a guardada, ou 5555) e tenta de novo. Isso acontece **uma vez por cabo e por endereço**: reiniciar o ADB derruba tudo o que usa o cabo, então ele não se repete.
+   Só falhas de conexão contam. Erros depois de conectado (por exemplo o Android não permitir a leitura da área de transferência) mantêm a própria mensagem.
 5. **Mensagens claras na seção de sincronização:**
    - 1ª falha: "Procurando o celular nesta rede…";
-   - a partir da 3ª, sem cabo: "Não achei o ADB do celular nesta rede. Conecte o cabo uma vez: o Mac reativa sozinho.";
-   - depois do reparo: "Reativando o ADB do celular pelo cabo…".
+   - a partir da 2ª, sem cabo: "Não achei o ADB do celular nesta rede. Conecte o cabo uma vez: o Mac reativa sozinho.";
+   - a partir da 2ª, com cabo e o celular nesta rede: "Reativando o ADB do celular pelo cabo…";
+   - com cabo, mas já reparado: "O celular está no cabo, mas não respondeu pelo Wi-Fi. Confira se o celular e o Mac estão na mesma rede.";
+   - com cabo, mas o celular fora desta rede: "Abra o MasterSync no celular, conectado à mesma rede do Mac.".
 
 ## Não objetivos
 

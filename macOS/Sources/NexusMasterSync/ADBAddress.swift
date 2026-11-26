@@ -7,9 +7,22 @@ enum ADBAddress {
     nonisolated static func rebased(_ saved: String?, onto host: String?) -> String? {
         guard let saved, let endpoint = ADBEndpoint(saved), let port = port(of: endpoint.address),
               !endpoint.address.hasPrefix("["),
-              let host, IPv4Address(host) != nil else { return nil }
+              let host, let parsed = IPv4Address(host), isReachableTarget(parsed) else { return nil }
         let current = String(endpoint.address.dropLast(String(port).count + 1))
         return current == host ? nil : "\(host):\(port)"
+    }
+
+    /// Loopback, link-local and "any" are never where a phone's ADB answers.
+    private nonisolated static func isReachableTarget(_ address: IPv4Address) -> Bool {
+        let bytes = Array(address.rawValue)
+        return !(bytes[0] == 127 || bytes[0] == 0 || (bytes[0] == 169 && bytes[1] == 254))
+    }
+
+    /// The address to try on attempt [attempt]: the phone's current IP first, then the saved address, alternating, so a
+    /// setup where the MasterSync socket's IP is not the one ADB answers on keeps working.
+    nonisolated static func candidate(saved: String?, host: String?, attempt: Int) -> String? {
+        guard let fresh = rebased(saved, onto: host) else { return saved }
+        return attempt % 2 == 0 ? fresh : saved
     }
 
     nonisolated static func port(of address: String?) -> Int? {
@@ -31,14 +44,28 @@ enum ADBAddress {
 enum ADBRecovery {
     enum Step: Equatable {
         case retry(status: String)
-        case repairOverUSB(status: String)
+        case repairOverUSB(status: String, key: String)
         case waitForCable(status: String)
     }
 
-    nonisolated static func next(failures: Int, usbDeviceAttached: Bool) -> Step {
+    nonisolated static func repairKey(serial: String, address: String?) -> String { "\(serial)|\(address ?? "")" }
+
+    /// Restarting a phone's ADB drops everything else using the cable, so it is done once per cable and address, and only
+    /// when the phone is actually on this network (otherwise it cannot help).
+    nonisolated static func next(failures: Int, usbSerial: String?, hostKnown: Bool, address: String?,
+                                 repairedFor: String?) -> Step {
         if failures < 2 { return .retry(status: "Procurando o celular nesta rede…") }
-        if usbDeviceAttached { return .repairOverUSB(status: "Reativando o ADB do celular pelo cabo…") }
-        return .waitForCable(status: "Não achei o ADB do celular nesta rede. Conecte o cabo uma vez: o Mac reativa sozinho.")
+        guard let usbSerial else {
+            return .waitForCable(status: "Não achei o ADB do celular nesta rede. Conecte o cabo uma vez: o Mac reativa sozinho.")
+        }
+        guard hostKnown else {
+            return .retry(status: "Abra o MasterSync no celular, conectado à mesma rede do Mac.")
+        }
+        let key = repairKey(serial: usbSerial, address: address)
+        if key == repairedFor {
+            return .retry(status: "O celular está no cabo, mas não respondeu pelo Wi-Fi. Confira se o celular e o Mac estão na mesma rede.")
+        }
+        return .repairOverUSB(status: "Reativando o ADB do celular pelo cabo…", key: key)
     }
 }
 

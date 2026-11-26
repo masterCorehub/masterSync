@@ -48,9 +48,9 @@ final class ADBClipboard: ObservableObject {
     @Published private(set) var wirelessSetupError: String?
 
     var receive: ((ADBClipboardEvent) -> Void)?
-    /// Where the phone is on the network right now (its saved port on its current IP), so a network change is followed.
-    var addressProvider: ((ADBWirelessDevice) -> String?)?
-    fileprivate func freshAddress(for device: ADBWirelessDevice) -> String? { addressProvider?(device) }
+    /// Where the phone is on the network right now (its IPv4), so a network change is followed.
+    var hostProvider: ((ADBWirelessDevice) -> String?)?
+    fileprivate func currentHost(of device: ADBWirelessDevice) -> String? { hostProvider?(device) }
     /// Called when a running session ends on its own (not when the user stops it).
     var onEnded: (() -> Void)?
     /// The user stopped the sync; automatic start waits until they start it again.
@@ -145,19 +145,49 @@ final class ADBClipboard: ObservableObject {
 
             var wasReady = false
             var failures = 0
-            var repairedAt = -3
+            var repairedFor: String?
+            // The address saved when this session started: the fallback when the phone's current IP does not answer.
+            let savedAddress = target.address
             while !Task.isCancelled {
                 // The phone may have changed networks since the address was saved.
-                if let fresh = await self?.freshAddress(for: target) { target.address = fresh }
+                let host = await self?.currentHost(of: target)
+                target.address = ADBAddress.candidate(saved: savedAddress, host: host, attempt: failures)
+                let serial: String
                 do {
-                    let serial = try await session.wirelessSerial(for: target)
+                    serial = try await session.wirelessSerial(for: target)
+                } catch ADBWirelessError.changedDevice {
+                    throw ADBWirelessError.changedDevice
+                } catch {
+                    // Not reaching the phone over Wi-Fi. A phone already verified once is looked for again, saying why;
+                    // a first setup reports its error.
+                    if (!wasReady && target.deviceID == nil) || Task.isCancelled { throw error }
+                    failures += 1
+                    let usbSerial = failures >= 2 ? session.usbSerial(matching: target.deviceID) : nil
+                    if usbSerial == nil { repairedFor = nil }
+                    switch ADBRecovery.next(failures: failures, usbSerial: usbSerial, hostKnown: host != nil,
+                                            address: target.address, repairedFor: repairedFor) {
+                    case .retry(let text), .waitForCable(let text):
+                        await self?.update(session, status: text)
+                    case .repairOverUSB(let text, let key):
+                        await self?.update(session, status: text)
+                        repairedFor = key
+                        let saved = ADBAddress.port(of: target.address) ?? 5555
+                        if let usbSerial { try? session.enableTCPIP(serial: usbSerial, port: saved >= 1024 ? saved : 5555) }
+                        try? await Task.sleep(for: .seconds(2))
+                    }
+                    guard !Task.isCancelled else { return }
+                    try await Task.sleep(for: .seconds(3))
+                    continue
+                }
+                failures = 0
+                repairedFor = nil
+                do {
                     let identity = try session.hardwareID(serial: serial)
                     if let previous = target.deviceID, identity != previous { throw ADBWirelessError.changedDevice }
                     target.deviceID = identity
                     let confirmed = target
                     try await session.listen(serial: serial, helper: helper, onReady: { [weak self] in
                         wasReady = true
-                        failures = 0
                         await self?.ready(session, transport: .wifi, device: confirmed)
                     }, onEvent: { [weak self] event in
                         await self?.accept(event, from: session)
@@ -165,28 +195,14 @@ final class ADBClipboard: ObservableObject {
                 } catch ADBWirelessError.changedDevice {
                     throw ADBWirelessError.changedDevice
                 } catch {
-                    // A phone already verified once is looked for again, saying why; a first setup reports its error.
-                    if (!wasReady && target.deviceID == nil) || Task.isCancelled { throw error }
-                    failures += 1
-                    let usbSerial = session.usbSerial(matching: target.deviceID)
-                    switch ADBRecovery.next(failures: failures, usbDeviceAttached: usbSerial != nil) {
-                    case .retry(let text), .waitForCable(let text):
-                        await self?.update(session, status: text)
-                    case .repairOverUSB(let text):
-                        await self?.update(session, status: text)
-                        if failures - repairedAt >= 3, let usbSerial {
-                            repairedAt = failures
-                            let saved = ADBAddress.port(of: target.address) ?? 5555
-                            try? session.enableTCPIP(serial: usbSerial, port: saved >= 1024 ? saved : 5555)
-                            try? await Task.sleep(for: .seconds(2))
-                        }
-                    }
+                    // Past the connection, an error is not about the network: it keeps its own message.
+                    if !wasReady || Task.isCancelled { throw error }
                 }
                 guard !Task.isCancelled else { return }
                 // Reconnect only when there is a stable identity for the device already selected.
                 guard target.service != nil || target.deviceID != nil else { return }
                 if target.deviceID == nil { target.address = nil }
-                if failures == 0 { await self?.update(session, status: "Reconectando ao mesmo celular pelo Wi-Fi…") }
+                await self?.update(session, status: "Reconectando ao mesmo celular pelo Wi-Fi…")
                 try await Task.sleep(for: .seconds(3))
             }
         }

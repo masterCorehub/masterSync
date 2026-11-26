@@ -219,9 +219,8 @@ final class NexusModel: ObservableObject {
         relay.forward = { [weak self] in self?.server?.send($1, to: $0) }
         clipboard.recordHistory = historyEnabled
         adbClipboard.receive = { [weak self] event in self?.clipboard.receive(event) }
-        adbClipboard.addressProvider = { [weak self] device in
-            guard let peer = device.peerID, let host = self?.server?.host(of: peer) else { return nil }
-            return ADBAddress.rebased(device.address, onto: host)
+        adbClipboard.hostProvider = { [weak self] device in
+            device.peerID.flatMap { self?.server?.host(of: $0) }
         }
         adbClipboard.onEnded = { [weak self] in
             self?.clipboardRetry.schedule(after: .seconds(15)) { [weak self] in self?.autoStartClipboardSync() }
