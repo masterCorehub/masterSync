@@ -35,12 +35,76 @@ final class NotificationSyncTests: XCTestCase {
         XCTAssertEqual(sync.notices.map(\.remoteID), ["other", "older"])
     }
 
-    private func notice(_ id: String, at: Int64) -> Message {
+    @MainActor private func visibleSync() -> NotificationSync {
+        let sync = NotificationSync()
+        sync.enabled = true
+        sync.hideContent = false
+        return sync
+    }
+
+    @MainActor func testHiddenFixedNoticeStaysHiddenUntilItChanges() throws {
+        let sync = visibleSync()
+        sync.handle(notice("fixed", at: 10, canDismiss: false, text: "tocando"), peer: "phone")
+        sync.hide(try XCTUnwrap(sync.notices.first))
+        XCTAssertTrue(sync.notices.isEmpty)
+
+        sync.handle(notice("fixed", at: 11, canDismiss: false, text: "tocando"), peer: "phone")
+        XCTAssertTrue(sync.notices.isEmpty)
+
+        sync.handle(notice("fixed", at: 12, canDismiss: false, text: "outra música"), peer: "phone")
+        XCTAssertEqual(sync.notices.map(\.body), ["outra música"])
+    }
+
+    @MainActor func testHiddenNoticeForgottenWhenRemoved() throws {
+        let sync = visibleSync()
+        sync.handle(notice("fixed", at: 10, canDismiss: false), peer: "phone")
+        sync.hide(try XCTUnwrap(sync.notices.first))
+        var removed = Message("noticeRemoved")
+        removed.id = "fixed"
+        sync.handle(removed, peer: "phone")
+
+        sync.handle(notice("fixed", at: 20, canDismiss: false), peer: "phone")
+        XCTAssertEqual(sync.notices.map(\.remoteID), ["fixed"])
+    }
+
+    @MainActor func testSnapshotKeepsHiddenNoticeHidden() throws {
+        let sync = visibleSync()
+        sync.handle(notice("fixed", at: 10, canDismiss: false), peer: "phone")
+        sync.hide(try XCTUnwrap(sync.notices.first))
+
+        var snapshot = Message("noticeSnapshot")
+        snapshot.id = Wire.id()
+        snapshot.offset = 0
+        snapshot.more = false
+        snapshot.notices = [notice("fixed", at: 10, canDismiss: false), notice("new", at: 30)]
+        sync.handle(snapshot, peer: "phone")
+        XCTAssertEqual(sync.notices.map(\.remoteID), ["new"])
+    }
+
+    @MainActor func testClearAllDismissesClearableAndHidesFixed() {
+        let sync = visibleSync()
+        var sent: [(String, Message)] = []
+        sync.send = { peer, message in sent.append((peer, message)) }
+        sync.handle(notice("clear", at: 10), peer: "phone")
+        sync.handle(notice("fixed", at: 20, canDismiss: false), peer: "phone")
+        sync.handle(notice("elsewhere", at: 30), peer: "other")
+
+        sync.clearAll(peer: "phone")
+        XCTAssertEqual(sent.map(\.0), ["phone"])
+        XCTAssertEqual(sent.map(\.1.type), ["noticeDismiss"])
+        XCTAssertEqual(sent.map(\.1.id), ["clear"])
+        XCTAssertEqual(Set(sync.notices.map(\.remoteID)), ["clear", "elsewhere"])
+    }
+
+    private func notice(_ id: String, at: Int64, canDismiss: Bool = true, text: String = "t") -> Message {
         var message = Message("notice")
         message.id = id
         message.app = "App"
         message.group = "test.app"
         message.at = at
+        message.name = "Título"
+        message.text = text
+        message.canDismiss = canDismiss
         return message
     }
 }

@@ -747,13 +747,27 @@ struct Dashboard: View {
     }
 
     private func dismissNoticeButton(_ notice: NotificationSync.Notice) -> some View {
-        Button { model.notifications.dismiss(notice) } label: {
-            Image(systemName: "xmark.circle")
+        let label = notice.canDismiss ? "Dispensar no Android" : "Fixa no Android — ocultar só no Mac"
+        return Button {
+            if notice.canDismiss { model.notifications.dismiss(notice) } else { model.notifications.hide(notice) }
+        } label: {
+            Image(systemName: notice.canDismiss ? "xmark.circle" : "eye.slash")
         }
         .buttonStyle(.borderless)
-        .help("Dispensar no Android")
-        .accessibilityLabel("Dispensar no Android")
-        .disabled(!notice.canDismiss)
+        .help(label)
+        .accessibilityLabel(notice.canDismiss ? "Dispensar no Android" : "Ocultar no Mac")
+    }
+
+    private var clearAllNoticesButton: some View {
+        let peer = model.selected?.id
+        return Button {
+            if let peer { model.notifications.clearAll(peer: peer) }
+        } label: {
+            Label("Limpar todas", systemImage: "xmark.bin")
+        }
+        .buttonStyle(NexusPillStyle(compact: true))
+        .help("Fecha no Android as que podem ser fechadas e oculta no Mac as fixas")
+        .disabled(peer == nil || !model.notifications.notices.contains { $0.peer == peer })
     }
 
     private var compactNotifications: some View {
@@ -762,6 +776,7 @@ struct Dashboard: View {
             HStack {
                 androidDndToggle
                 Spacer()
+                clearAllNoticesButton
                 Button("Ver todas") { showNotices = false; model.section = .notifications }
                     .buttonStyle(NexusPillStyle(compact: true))
             }
@@ -1007,6 +1022,7 @@ struct Dashboard: View {
                 }
             }
             card("Ativas no Android", icon: "tray") {
+                clearAllNoticesButton
                 if model.canRefreshNotices && model.notificationsEnabled {
                     Button("Atualizar") { model.refreshNotices() }
                         .buttonStyle(NexusPillStyle(compact: true))

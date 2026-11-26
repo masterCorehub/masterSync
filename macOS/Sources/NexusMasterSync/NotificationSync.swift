@@ -26,6 +26,8 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
     }
 
     private var snapshots: [String: Snapshot] = [:]
+    /// Fixed (non-clearable) notices hidden on this Mac, by notice id, with the content they had when hidden.
+    private var hidden: [String: String] = [:]
     @Published private(set) var dnd: [String: Message] = [:]
     @Published private(set) var dismissErrors: [String: String] = [:]
     @Published private(set) var notices: [Notice] = []
@@ -86,6 +88,7 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
         guard let remote = message.id, remote.utf8.count <= 128 else { return }
         let id = peer + "." + remote
         if message.type == "noticeRemoved" {
+            hidden[id] = nil
             remove(id)
             return
         }
@@ -94,6 +97,10 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
             return
         }
         guard let entry = makeEntry(message, peer: peer) else { return }
+        if let signature = hidden[id] {
+            if signature == Self.signature(entry) { return }
+            hidden[id] = nil
+        }
         let change = notices.first(where: { $0.id == id }).map {
             $0.title != entry.title || $0.body != entry.body
         } ?? true
@@ -141,6 +148,13 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
             return
         }
 
+        for (id, signature) in hidden where id.hasPrefix(peer + ".") {
+            if let entry = snapshot.entries[id], Self.signature(entry) == signature {
+                snapshot.entries[id] = nil
+            } else {
+                hidden[id] = nil
+            }
+        }
         let removed = notices.filter { $0.peer == peer && snapshot.entries[$0.id] == nil }.map(\.id)
         center?.removeDeliveredNotifications(withIdentifiers: removed)
         notices = (notices.filter { $0.peer != peer } + Array(snapshot.entries.values)).sorted(by: newestFirst)
@@ -160,6 +174,21 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
         send?(entry.peer, message)
     }
 
+    /// Hides a notice on this Mac only. It comes back if its content changes, and is forgotten when Android removes it.
+    func hide(_ entry: Notice) {
+        hidden[entry.id] = Self.signature(entry)
+        remove(entry.id)
+    }
+
+    /// Dismisses on Android every notice it allows, and hides the fixed ones on this Mac.
+    func clearAll(peer: String) {
+        for entry in notices where entry.peer == peer {
+            if entry.canDismiss { dismiss(entry) } else { hide(entry) }
+        }
+    }
+
+    private static func signature(_ entry: Notice) -> String { entry.title + "\u{0}" + entry.body }
+
     func reply(to entry: Notice, text: String) {
         guard entry.canReply, !text.isEmpty, text.utf8.count <= 1024 else { return }
         var message = Message("noticeReply")
@@ -170,6 +199,7 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
 
     func removeAll() {
         snapshots.removeAll()
+        hidden.removeAll()
         dismissErrors.removeAll()
         center?.removeDeliveredNotifications(withIdentifiers: notices.map(\.id))
         notices.removeAll()
@@ -178,6 +208,7 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
     func removePeer(_ peer: String) {
         snapshots[peer] = nil
         dismissErrors[peer] = nil
+        hidden = hidden.filter { !$0.key.hasPrefix(peer + ".") }
         notices.filter { $0.peer == peer }.forEach { remove($0.id) }
     }
 
