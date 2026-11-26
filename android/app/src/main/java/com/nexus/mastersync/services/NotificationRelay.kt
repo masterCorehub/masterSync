@@ -7,5 +7,7 @@ interface NotificationRelay {
     fun refresh()
     fun receive(data: JSONObject)
     fun mediaStatus(): JSONObject?
-    fun media(command: String): String
+    fun media(command: String, argument: Long = 0): String
+    fun mediaArt(key: String): JSONObject?
+    fun mediaQueue(): JSONObject?
 }

@@ -8,7 +8,12 @@ import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.media.MediaMetadata
+import android.media.Rating
+import android.media.session.MediaController
 import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
+import android.os.SystemClock
 import android.os.Handler
 import android.os.Looper
 import android.os.Bundle
@@ -22,6 +27,8 @@ import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 
 class MirrorNotifications : NotificationListenerService(), NotificationRelay {
+    private companion object { const val MAX_ART_BYTES = 48 * 1024 }
+
     private val nexus get() = (application as NexusApplication).nexus
     private val forwarded = mutableMapOf<String, StatusBarNotification>()
 
@@ -243,28 +250,95 @@ class MirrorNotifications : NotificationListenerService(), NotificationRelay {
         } finally { bitmap.recycle() }
     }.getOrNull()
 
-    override fun mediaStatus(): JSONObject? = runCatching {
-        val source = ComponentName(this, MirrorNotifications::class.java)
-        val session = getSystemService(MediaSessionManager::class.java).getActiveSessions(source).firstOrNull()
-        Wire.message("mediaStatus").apply {
-            session?.metadata?.description?.title?.toString()?.take(150)?.let { put("name", it) }
-            session?.metadata?.description?.subtitle?.toString()?.take(150)?.let { put("text", it) }
-            session?.playbackState?.let { put("playing", it.state == android.media.session.PlaybackState.STATE_PLAYING) }
-        }
+    private fun activeSession(): MediaController? = runCatching {
+        getSystemService(MediaSessionManager::class.java)
+            .getActiveSessions(ComponentName(this, MirrorNotifications::class.java)).firstOrNull()
     }.getOrNull()
 
-    override fun media(command: String): String = runCatching {
-        val manager = getSystemService(MediaSessionManager::class.java)
-        val source = ComponentName(this, MirrorNotifications::class.java)
-        val session = manager.getActiveSessions(source).firstOrNull()
-            ?: return "Nenhum aplicativo de mídia está ativo no Android."
+    private fun title(metadata: MediaMetadata?) =
+        metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: metadata?.description?.title?.toString()
+
+    private fun artist(metadata: MediaMetadata?) =
+        metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: metadata?.description?.subtitle?.toString()
+
+    override fun mediaStatus(): JSONObject? = runCatching {
+        val session = activeSession() ?: return Wire.message("mediaStatus")
+        val metadata = session.metadata
+        val state = session.playbackState
+        val snapshot = MediaSnapshot(
+            title = title(metadata), artist = artist(metadata), album = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM),
+            year = (metadata?.getLong(MediaMetadata.METADATA_KEY_YEAR) ?: 0L).toInt(),
+            track = (metadata?.getLong(MediaMetadata.METADATA_KEY_TRACK_NUMBER) ?: 0L).toInt(),
+            tracks = (metadata?.getLong(MediaMetadata.METADATA_KEY_NUM_TRACKS) ?: 0L).toInt(),
+            durationMs = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L,
+            positionMs = state?.position ?: 0L,
+            updatedAt = state?.lastPositionUpdateTime ?: 0L,
+            speed = state?.playbackSpeed ?: 1f,
+            playing = state?.let { it.state == PlaybackState.STATE_PLAYING },
+            canSeek = ((state?.actions ?: 0L) and PlaybackState.ACTION_SEEK_TO) != 0L,
+            canLike = session.ratingType == Rating.RATING_HEART,
+            liked = metadata?.getRating(MediaMetadata.METADATA_KEY_USER_RATING)?.hasHeart() == true,
+            hasQueue = session.queue?.isNotEmpty() == true
+        )
+        val payload = MediaPayload.status(snapshot, SystemClock.elapsedRealtime())
+        Wire.message("mediaStatus").apply { payload.keys().forEach { if (it != "type") put(it, payload.get(it)) } }
+    }.getOrNull()
+
+    override fun media(command: String, argument: Long): String = runCatching {
+        val session = activeSession() ?: return "Nenhum aplicativo de mídia está ativo no Android."
+        val controls = session.transportControls
         when (command) {
-            "play" -> session.transportControls.play()
-            "pause" -> session.transportControls.pause()
-            "next" -> session.transportControls.skipToNext()
-            "previous" -> session.transportControls.skipToPrevious()
+            "play" -> controls.play()
+            "pause" -> controls.pause()
+            "next" -> controls.skipToNext()
+            "previous" -> controls.skipToPrevious()
+            "seek" -> if (argument >= 0) controls.seekTo(argument) else return "Posição inválida."
+            "like", "unlike" -> {
+                if (session.ratingType != Rating.RATING_HEART) return "Este aplicativo não permite favoritar."
+                controls.setRating(Rating.newHeartRating(command == "like"))
+            }
+            "queueItem" -> {
+                if (session.queue?.any { it.queueId == argument } != true) return "Esse item não está mais na fila."
+                controls.skipToQueueItem(argument)
+            }
             else -> return "Comando indisponível."
         }
         "Comando de mídia enviado."
     }.getOrDefault("Autorize o acesso às notificações para controlar a mídia.")
+
+    /** The cover of the track playing now, as a small JPEG; null when [key] is no longer the current track. */
+    override fun mediaArt(key: String): JSONObject? = runCatching {
+        val metadata = activeSession()?.metadata ?: return null
+        val current = MediaPayload.artKey(title(metadata), artist(metadata), metadata.getString(MediaMetadata.METADATA_KEY_ALBUM))
+        if (key.isEmpty() || key != current) return null
+        val source = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+            ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART) ?: return null
+        val bytes = listOf(256 to 80, 256 to 60, 192 to 60).firstNotNullOfOrNull { (edge, quality) ->
+            jpeg(source, edge, quality)?.takeIf { it.size <= MAX_ART_BYTES }
+        } ?: return null
+        Wire.message("mediaArt").put("artKey", key).put("mime", "image/jpeg").put("data", Wire.encode(bytes))
+    }.getOrNull()
+
+    private fun jpeg(source: Bitmap, edge: Int, quality: Int): ByteArray? = runCatching {
+        val scale = minOf(1f, edge.toFloat() / maxOf(source.width, source.height))
+        val scaled = if (scale < 1f) Bitmap.createScaledBitmap(source, (source.width * scale).toInt().coerceAtLeast(1),
+            (source.height * scale).toInt().coerceAtLeast(1), true) else source
+        try {
+            ByteArrayOutputStream().also { scaled.compress(Bitmap.CompressFormat.JPEG, quality, it) }.toByteArray()
+        } finally {
+            // The metadata owns the original bitmap.
+            if (scaled !== source) scaled.recycle()
+        }
+    }.getOrNull()
+
+    override fun mediaQueue(): JSONObject? = runCatching {
+        val session = activeSession() ?: return null
+        val items = JSONArray()
+        session.queue.orEmpty().take(MediaPayload.MAX_QUEUE).forEach { item ->
+            items.put(JSONObject().put("id", item.queueId)
+                .put("title", item.description.title?.toString().orEmpty().take(150)))
+        }
+        Wire.message("mediaQueue").put("queue", items)
+            .apply { session.playbackState?.activeQueueItemId?.takeIf { it >= 0 }?.let { put("queueId", it) } }
+    }.getOrNull()
 }

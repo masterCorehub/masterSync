@@ -448,8 +448,15 @@ class NexusController(val context: Context) {
             "mediaStatusRequest" -> if (options.value.mediaControl) {
                 listener?.mediaStatus()?.let { client.sendTo(peer, it) }
             }
+            "mediaArtRequest" -> if (options.value.mediaControl) {
+                listener?.mediaArt(message.optString("artKey"))?.let { client.sendTo(peer, it) }
+            }
+            "mediaQueueRequest" -> if (options.value.mediaControl) {
+                listener?.mediaQueue()?.let { client.sendTo(peer, it) }
+            }
             "mediaCommand" -> if (options.value.mediaControl) {
-                listener?.media(message.optString("message"))?.let { result ->
+                val argument = if (message.has("queueId")) message.optLong("queueId") else message.optLong("positionMs", -1)
+                listener?.media(message.optString("message"), argument)?.let { result ->
                     client.sendTo(peer, Wire.message("actionStatus").put("message", result))
                     listener?.mediaStatus()?.let { client.sendTo(peer, it) }
                 }
