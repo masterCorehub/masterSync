@@ -737,6 +737,9 @@ struct Dashboard: View {
 
     private func conversationBubble(_ entry: ConversationEntry) -> some View {
         VStack(alignment: .leading, spacing: 4) {
+            Text(ChatMedia.senderName(outgoing: entry.outgoing, local: Host.current().localizedName ?? "",
+                                      peer: model.selected?.name ?? ""))
+                .font(.caption2.weight(.semibold)).foregroundStyle(palette.muted).lineLimit(1)
             switch entry {
             case .text(let message):
                 Text(message.text).textSelection(.enabled)
@@ -744,10 +747,14 @@ struct Dashboard: View {
                     Text("Sem confirmação").font(.caption2).foregroundStyle(palette.muted)
                 }
             case .file(let item, _):
-                Button { preview = item.url } label: {
-                    Label(item.offer.name, systemImage: "doc").lineLimit(2)
+                if ChatMedia.isImage(mime: item.offer.mime) {
+                    ChatImage(item: item) { preview = item.url }
+                } else {
+                    Button { preview = item.url } label: {
+                        Label(item.offer.name, systemImage: "doc").lineLimit(2)
+                    }
+                    .buttonStyle(.plain).disabled(!FileManager.default.fileExists(atPath: item.url.path))
                 }
-                .buttonStyle(.plain).disabled(!FileManager.default.fileExists(atPath: item.url.path))
             }
             Text(entry.date, style: .time)
                 .font(.caption2).foregroundStyle(palette.muted)
