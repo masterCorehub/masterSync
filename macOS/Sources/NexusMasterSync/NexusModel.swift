@@ -212,10 +212,7 @@ final class NexusModel: ObservableObject {
         clipboard.recordHistory = historyEnabled
         adbClipboard.receive = { [weak self] event in self?.clipboard.receive(event) }
         adbClipboard.onEnded = { [weak self] in
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(15))
-                self?.autoStartClipboardSync()
-            }
+            self?.clipboardRetry.schedule(after: .seconds(15)) { [weak self] in self?.autoStartClipboardSync() }
         }
         screen.send = { [weak self] in self?.server?.send($1, to: $0) }
         gallery.send = { [weak self] in self?.server?.send($1, to: $0) }
@@ -852,8 +849,10 @@ final class NexusModel: ObservableObject {
                                            connectedPeer: connected, running: adbClipboard.transport != nil,
                                            paused: adbClipboard.paused),
               let device = adbClipboard.wirelessDevice else { return }
+        clipboardRetry.cancel()
         adbClipboard.startWiFi(device: device)
     }
+    private let clipboardRetry = SingleRetry()
 
     private func resetSession(_ peer: String) {
         permissions[peer] = nil

@@ -99,6 +99,11 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
         guard let entry = makeEntry(message, peer: peer) else { return }
         if let signature = hidden[id] {
             if signature == Self.signature(entry) || Self.isPlaceholder(entry) { return }
+            // Hidden while Android redacted it: the first real content is what the user hid.
+            if signature == Self.placeholderSignature {
+                hidden[id] = Self.signature(entry)
+                return
+            }
             hidden[id] = nil
         }
         let change = notices.first(where: { $0.id == id }).map {
@@ -149,7 +154,9 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
         }
 
         for (id, signature) in hidden where id.hasPrefix(peer + ".") {
-            if let entry = snapshot.entries[id], Self.signature(entry) == signature || Self.isPlaceholder(entry) {
+            if let entry = snapshot.entries[id], Self.signature(entry) == signature || Self.isPlaceholder(entry)
+                || signature == Self.placeholderSignature {
+                if signature == Self.placeholderSignature, !Self.isPlaceholder(entry) { hidden[id] = Self.signature(entry) }
                 snapshot.entries[id] = nil
             } else {
                 hidden[id] = nil
@@ -191,6 +198,7 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
 
     /// Android redacts content while the phone is locked; a redacted repost says nothing about a change.
     private static func isPlaceholder(_ entry: Notice) -> Bool { entry.title == "Notificação recebida" && entry.body.isEmpty }
+    private static let placeholderSignature = "Notificação recebida\u{0}"
 
     func reply(to entry: Notice, text: String) {
         guard entry.canReply, !text.isEmpty, text.utf8.count <= 1024 else { return }

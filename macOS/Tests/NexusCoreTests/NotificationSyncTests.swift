@@ -106,6 +106,19 @@ final class NotificationSyncTests: XCTestCase {
         XCTAssertTrue(sync.notices.isEmpty)
     }
 
+    @MainActor func testHiddenWhileRedactedStaysHiddenWhenContentArrives() throws {
+        let sync = visibleSync()
+        var locked = notice("fixed", at: 10, canDismiss: false, text: "")
+        locked.name = "Notificação recebida"
+        sync.handle(locked, peer: "phone")
+        sync.hide(try XCTUnwrap(sync.notices.first))
+
+        sync.handle(notice("fixed", at: 11, canDismiss: false, text: "tocando"), peer: "phone")
+        XCTAssertTrue(sync.notices.isEmpty)
+        sync.handle(notice("fixed", at: 12, canDismiss: false, text: "outra música"), peer: "phone")
+        XCTAssertEqual(sync.notices.map(\.body), ["outra música"])
+    }
+
     @MainActor func testClearAllDismissesClearableAndHidesFixed() {
         let sync = visibleSync()
         var sent: [(String, Message)] = []

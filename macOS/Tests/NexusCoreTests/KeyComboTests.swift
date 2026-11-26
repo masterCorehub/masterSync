@@ -10,10 +10,13 @@ final class KeyComboTests: XCTestCase {
         XCTAssertEqual(combo?.label, "⌃⌥⇧⌘S")
     }
 
-    func testRequiresCommandControlOrOption() {
+    func testRequiresControlOrOption() {
         XCTAssertNil(KeyCombo(keyCode: UInt16(kVK_ANSI_S), flags: [.shift], key: "s"))
         XCTAssertNil(KeyCombo(keyCode: UInt16(kVK_ANSI_S), flags: [], key: "s"))
+        XCTAssertNil(KeyCombo(keyCode: UInt16(kVK_ANSI_C), flags: [.command], key: "c"))
+        XCTAssertNil(KeyCombo(keyCode: UInt16(kVK_ANSI_D), flags: [.command, .shift], key: "d"))
         XCTAssertNotNil(KeyCombo(keyCode: UInt16(kVK_ANSI_S), flags: [.option], key: "s"))
+        XCTAssertNotNil(KeyCombo(keyCode: UInt16(kVK_ANSI_S), flags: [.control, .command], key: "s"))
     }
 
     func testCarbonModifiers() {

@@ -98,6 +98,8 @@ struct Dashboard: View {
         }
         .sheet(isPresented: $wirelessClipboardSetup) {
             WirelessClipboardSetup(device: model.adbClipboard.wirelessDevice) { device, pairing in
+                // A session stuck reconnecting to an old address would make the new setup a no-op.
+                model.adbClipboard.stop()
                 model.adbClipboard.startWiFi(device: device, pairing: pairing)
             }
         }

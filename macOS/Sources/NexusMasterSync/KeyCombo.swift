@@ -15,10 +15,10 @@ struct KeyCombo: Codable, Equatable, Sendable {
         self.key = key
     }
 
-    /// A shortcut that can work everywhere needs ⌘, ⌃ or ⌥; Shift alone would steal plain typing.
+    /// A global shortcut needs ⌃ or ⌥: plain ⌘ and ⇧⌘ belong to every app's menus (⌘C, ⌘V) and to MasterSync's own.
     init?(keyCode: UInt16, flags: NSEvent.ModifierFlags, key: String) {
         let modifiers = Self.carbonModifiers(flags)
-        guard modifiers & UInt32(cmdKey | controlKey | optionKey) != 0,
+        guard modifiers & UInt32(controlKey | optionKey) != 0,
               let printable = key.trimmingCharacters(in: .whitespacesAndNewlines).first else { return nil }
         self.init(keyCode: UInt32(keyCode), modifiers: modifiers, key: String(printable).uppercased())
     }
