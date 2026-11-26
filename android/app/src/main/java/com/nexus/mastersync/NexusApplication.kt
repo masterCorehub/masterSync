@@ -63,26 +63,28 @@ class NexusController(val context: Context) {
     private data class Battery(val level: Int?, val charging: Boolean)
 
     private val storage = context.getSharedPreferences("integration-v1", Context.MODE_PRIVATE)
-    data class ChatEntry(val peer: String, val id: String, val text: String, val outgoing: Boolean, val confirmed: Boolean)
+    data class ChatEntry(val peer: String, val id: String, val text: String, val outgoing: Boolean, val confirmed: Boolean,
+                         val time: Long = 0) {
+        fun toJson(): JSONObject = JSONObject().put("peer", peer).put("id", id).put("text", text)
+            .put("outgoing", outgoing).put("confirmed", confirmed).put("time", time)
+
+        companion object {
+            fun fromJson(item: JSONObject) = ChatEntry(item.getString("peer"), item.getString("id"), item.getString("text"),
+                item.getBoolean("outgoing"), item.getBoolean("confirmed"), item.optLong("time", 0))
+        }
+    }
     private val chatHistory = MutableStateFlow(readChat())
     val messages = chatHistory.asStateFlow()
 
     private fun readChat(): List<ChatEntry> = runCatching {
         val array = JSONArray(storage.getString("chat-history", "[]"))
-        List(array.length()) { index ->
-            val item = array.getJSONObject(index)
-            ChatEntry(item.getString("peer"), item.getString("id"), item.getString("text"),
-                item.getBoolean("outgoing"), item.getBoolean("confirmed"))
-        }
+        List(array.length()) { index -> ChatEntry.fromJson(array.getJSONObject(index)) }
     }.getOrDefault(emptyList())
 
     private fun saveChat(entries: List<ChatEntry>) {
         val recent = entries.takeLast(400)
         val json = JSONArray()
-        recent.forEach { item ->
-            json.put(JSONObject().put("peer", item.peer).put("id", item.id).put("text", item.text)
-                .put("outgoing", item.outgoing).put("confirmed", item.confirmed))
-        }
+        recent.forEach { item -> json.put(item.toJson()) }
         storage.edit().putString("chat-history", json.toString()).apply()
         chatHistory.value = recent
     }
@@ -93,7 +95,7 @@ class NexusController(val context: Context) {
         if (!permissions.value.chat || text.isEmpty() || text.toByteArray().size > 2048) return false
         val id = Wire.id()
         if (!client.sendTo(peer, Wire.message("chat").put("id", id).put("text", text))) return false
-        saveChat(chatHistory.value + ChatEntry(peer, id, text, true, false))
+        saveChat(chatHistory.value + ChatEntry(peer, id, text, true, false, System.currentTimeMillis()))
         return true
     }
 
@@ -108,7 +110,7 @@ class NexusController(val context: Context) {
             val text = message.optString("text")
             if (text.isEmpty() || text.toByteArray().size > 2048) return
             if (chatHistory.value.none { it.peer == peer && it.id == id }) {
-                saveChat(chatHistory.value + ChatEntry(peer, id, text, false, true))
+                saveChat(chatHistory.value + ChatEntry(peer, id, text, false, true, System.currentTimeMillis()))
             }
             client.sendTo(peer, Wire.message("chatAck").put("id", id))
         }

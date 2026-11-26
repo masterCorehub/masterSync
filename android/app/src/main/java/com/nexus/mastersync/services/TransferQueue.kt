@@ -26,7 +26,14 @@ class TransferQueue(private val context: Context, private val sendTo: (String, J
 
     data class Progress(val id: String, val name: String, val size: Long, val offset: Long, val sending: Boolean)
     data class Received(val item: Item, val file: File, val peer: String)
-    data class Sent(val peer: String, val name: String)
+    data class Sent(val peer: String, val name: String, val time: Long = 0, val size: Long = 0) {
+        fun toJson(): JSONObject = JSONObject().put("peer", peer).put("name", name).put("time", time).put("size", size)
+
+        companion object {
+            fun fromJson(item: JSONObject) = Sent(item.getString("peer"), item.getString("name"),
+                item.optLong("time", 0), item.optLong("size", 0))
+        }
+    }
     private data class Outgoing(val peer: String, val item: Item, val file: File, val scanPage: Boolean,
                                 val onFailure: ((String) -> Unit)?, var expected: Long? = null)
     private data class Incoming(val peer: String, val item: Item, val partial: File, val destination: File)
@@ -51,16 +58,13 @@ class TransferQueue(private val context: Context, private val sendTo: (String, J
 
     private fun readSent(): List<Sent> = runCatching {
         val entries = JSONArray(history.getString("sent", "[]"))
-        List(entries.length()) { index ->
-            val item = entries.getJSONObject(index)
-            Sent(item.getString("peer"), item.getString("name"))
-        }
+        List(entries.length()) { index -> Sent.fromJson(entries.getJSONObject(index)) }
     }.getOrDefault(emptyList())
 
     private fun recordSent(peer: String, item: Item) {
-        val recent = (mutableSent.value + Sent(peer, item.name)).takeLast(150)
+        val recent = (mutableSent.value + Sent(peer, item.name, System.currentTimeMillis(), item.size)).takeLast(150)
         val encoded = JSONArray()
-        recent.forEach { encoded.put(JSONObject().put("peer", it.peer).put("name", it.name)) }
+        recent.forEach { encoded.put(it.toJson()) }
         history.edit().putString("sent", encoded.toString()).apply()
         mutableSent.value = recent
     }
