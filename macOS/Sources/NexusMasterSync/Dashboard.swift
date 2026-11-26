@@ -408,42 +408,29 @@ struct Dashboard: View {
 
     private var audioPanel: some View {
         let screen = model.screen
-        return card("Áudio do Android", icon: "speaker.wave.2") {
-            Toggle("Ouvir no Mac", isOn: Binding(
-                get: { screen.audioOnlyActive },
-                set: { enabled in
-                    if enabled {
+        let state = model.currentMediaState
+        let output = MediaOutput.current(audioOnlyActive: screen.audioOnlyActive)
+        return VStack(alignment: .leading, spacing: 11) {
+            MediaPlayerCard(
+                state: state, art: state?.artKey.flatMap { model.mediaArt[$0] }, queue: model.mediaQueue,
+                queueActive: model.mediaQueueActive, output: output, connecting: screen.connecting,
+                canControl: model.canPlayMedia,
+                // A scrcpy control window already owns the audio; ending it is done from its own button.
+                canChooseOutput: !(screen.usbActive && !screen.audioOnlyActive), palette: palette,
+                onCommand: { model.mediaControl($0) }, onSeek: { model.mediaSeek(toFraction: $0) },
+                onLike: { model.mediaLike($0) }, onOpenQueue: { model.mediaQueueRefresh() },
+                onPick: { model.mediaPlay(queueItem: $0) },
+                onOutput: { target in
+                    switch target {
+                    case .mac:
                         if let device = model.wirelessControlDevice(for: model.selected?.id) {
                             screen.launchScrcpy(audioOnly: true, wireless: device)
                         } else { openWirelessControlGuide() }
-                    } else { screen.stopUSB() }
-                }
-            ))
-            .disabled(screen.connecting || (screen.usbActive && !screen.audioOnlyActive))
-            Divider()
-            HStack(spacing: 10) {
-                Image(systemName: "music.note")
-                    .frame(width: 40, height: 40)
-                    .background(palette.accentSurface, in: RoundedRectangle(cornerRadius: 8))
-                    .foregroundStyle(palette.accent)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(model.currentMedia?.name ?? "Reprodução").lineLimit(1)
-                    if let artist = model.currentMedia?.text {
-                        Text(artist).font(.caption).foregroundStyle(palette.muted).lineLimit(1)
+                    case .phone:
+                        screen.stopUSB()
                     }
-                }
-                Spacer()
-                playbackButton("previous", icon: "backward.end.fill", title: "Anterior")
-                if let playing = model.currentMedia?.playing {
-                    playbackButton(playing ? "pause" : "play", icon: playing ? "pause.fill" : "play.fill",
-                                   title: playing ? "Pausar" : "Reproduzir")
-                } else {
-                    playbackButton("play", icon: "play.fill", title: "Reproduzir")
-                    playbackButton("pause", icon: "pause.fill", title: "Pausar")
-                }
-                playbackButton("next", icon: "forward.end.fill", title: "Próxima")
-            }
-            if let volume {
+                })
+            if output == .mac, let volume {
                 HStack {
                     Slider(value: Binding(get: { self.volume ?? volume }, set: { self.volume = $0 }),
                            in: 0...100, step: 1) {
@@ -458,8 +445,8 @@ struct Dashboard: View {
                     }
                     Text("\(Int(volume))%").monospacedDigit()
                 }
+                .padding(.horizontal, 6)
             }
-            if screen.connecting { ProgressView("Conectando…").controlSize(.small) }
             if let feedback = screen.feedback { empty(feedback) }
         }
         .task { volume = await outputVolume() }
@@ -489,13 +476,6 @@ struct Dashboard: View {
                 return Double(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
             } catch { return nil }
         }.value
-    }
-
-    private func playbackButton(_ command: String, icon: String, title: String) -> some View {
-        Button { model.mediaControl(command) } label: { Image(systemName: icon) }
-            .buttonStyle(NexusPillStyle(compact: true))
-            .disabled(!model.canPlayMedia)
-            .help(title).accessibilityLabel(title)
     }
 
     private var notificationButton: some View {
@@ -1153,10 +1133,6 @@ struct Dashboard: View {
                 HStack {
                     Button("Tocar telefone") { model.findPhone() }.disabled(!model.canFindPhone)
                     Spacer()
-                    Button("Anterior") { model.mediaControl("previous") }.disabled(!model.canPlayMedia)
-                    Button("Reproduzir") { model.mediaControl("play") }.disabled(!model.canPlayMedia)
-                    Button("Pausar") { model.mediaControl("pause") }.disabled(!model.canPlayMedia)
-                    Button("Próxima") { model.mediaControl("next") }.disabled(!model.canPlayMedia)
                 }
                 if let feedback = model.actionFeedback { empty(feedback) }
             }

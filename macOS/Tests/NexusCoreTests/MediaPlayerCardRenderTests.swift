@@ -1,0 +1,72 @@
+import AppKit
+import NexusCore
+@testable import NexusMasterSync
+import SwiftUI
+import XCTest
+
+@MainActor
+final class MediaPlayerCardRenderTests: XCTestCase {
+    private func sampleState(playing: Bool = true) -> MediaPlayerState {
+        var message = Message("mediaStatus")
+        message.name = "Abracadabra"
+        message.artist = "Lady Gaga"
+        message.albumName = "Mayhem"
+        message.year = 2025
+        message.trackNumber = 2
+        message.trackCount = 14
+        message.durationMs = 223_000
+        message.positionMs = 56_000
+        message.speed = 1
+        message.playing = playing
+        message.artKey = "k"
+        message.canSeek = true
+        message.canLike = true
+        message.liked = false
+        message.hasQueue = true
+        return MediaPlayerState(message: message, receivedAt: .now)
+    }
+
+    private func sampleArt() -> NSImage {
+        let image = NSImage(size: NSSize(width: 160, height: 160))
+        image.lockFocus()
+        NSGradient(colors: [.darkGray, .lightGray])?.draw(in: NSRect(x: 0, y: 0, width: 160, height: 160), angle: 45)
+        image.unlockFocus()
+        return image
+    }
+
+    private func render(_ state: MediaPlayerState?, scheme: ColorScheme, output: MediaOutput, width: CGFloat = 440) throws -> NSImage {
+        let palette = NexusPalette(scheme: scheme)
+        let card = MediaPlayerCard(
+            state: state, art: state == nil ? nil : sampleArt(), queue: [MediaQueueItem(id: 1, title: "Faixa um")],
+            queueActive: 1, output: output, connecting: false, canControl: true, canChooseOutput: true, palette: palette,
+            onCommand: { _ in }, onSeek: { _ in }, onLike: { _ in }, onOpenQueue: {}, onPick: { _ in }, onOutput: { _ in })
+        let view = card.frame(width: width).padding(28).background(palette.canvas).environment(\.colorScheme, scheme)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        return try XCTUnwrap(renderer.nsImage)
+    }
+
+    func testCardRendersInBothAppearances() throws {
+        for (name, scheme) in [("claro", ColorScheme.light), ("escuro", ColorScheme.dark)] {
+            let playing = try render(sampleState(), scheme: scheme, output: .mac)
+            XCTAssertGreaterThan(playing.size.width, 300)
+            XCTAssertGreaterThan(playing.size.height, 100)
+            let idle = try render(nil, scheme: scheme, output: .phone)
+            XCTAssertGreaterThan(idle.size.height, 60)
+            for (suffix, image) in [("tocando", playing), ("vazio", idle)] {
+                if let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                    try? png.write(to: URL(fileURLWithPath: "/private/tmp/claude-501/media-card-\(name)-\(suffix).png"))
+                }
+            }
+        }
+    }
+
+    /// The card sits in a 390 pt window (about 340 pt of content): everything must still fit.
+    func testCardFitsTheNarrowWindow() throws {
+        let image = try render(sampleState(), scheme: .light, output: .mac, width: 340)
+        XCTAssertGreaterThan(image.size.height, 150)
+        if let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: "/private/tmp/claude-501/media-card-estreito.png"))
+        }
+    }
+}
