@@ -26,4 +26,14 @@ final class WireTests: XCTestCase {
         XCTAssertTrue(Wire.matches(credential, credential))
         XCTAssertFalse(Wire.matches(credential, try Wire.random(32)))
     }
+
+    func testLauncherIconsRoundTrip() throws {
+        var message = Message("launcherIcons")
+        message.launcherIcons = [AndroidAppIcon(component: "a.b/.Main", data: "iVBORw0KGgo=")]
+        message.components = ["a.b/.Main"]
+        let decoded = try JSONDecoder().decode(Message.self, from: JSONEncoder().encode(message))
+        XCTAssertEqual(decoded.launcherIcons?.first?.component, "a.b/.Main")
+        XCTAssertEqual(decoded.launcherIcons?.first?.data, "iVBORw0KGgo=")
+        XCTAssertEqual(decoded.components, ["a.b/.Main"])
+    }
 }

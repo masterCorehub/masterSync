@@ -126,6 +126,8 @@ public struct Message: Codable {
     public var adbProof: Bool?
     public var launcher: Bool?
     public var launcherApps: [AndroidApp]?
+    public var launcherIcons: [AndroidAppIcon]?
+    public var components: [String]?
     public var screenWidth: Int?
     public var screenHeight: Int?
     public var mirror: Bool?
@@ -138,10 +140,25 @@ public struct Message: Codable {
     public init(_ type: String) { self.type = type }
 }
 
+public struct AndroidAppIcon: Codable {
+    public let component: String
+    public let data: String
+
+    public init(component: String, data: String) {
+        self.component = component
+        self.data = data
+    }
+}
+
 public struct AndroidApp: Codable, Identifiable {
     public let component: String
     public let label: String
     public var id: String { component }
+
+    public init(component: String, label: String) {
+        self.component = component
+        self.label = label
+    }
 
     public var validComponent: Bool {
         component.utf8.count <= 220

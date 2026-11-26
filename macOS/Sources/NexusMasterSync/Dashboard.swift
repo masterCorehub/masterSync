@@ -296,17 +296,31 @@ struct Dashboard: View {
                 launcherPopover(apps: apps, peer: peer, pins: pins)
             }
             if !pinnedApps.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], alignment: .leading, spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 8)], alignment: .leading, spacing: 8) {
                     ForEach(pinnedApps) { app in
+                        let label = Wire.visible(app.label, limit: 70)
                         Button { model.launchAndroidApp(app) } label: {
-                            Text(Wire.visible(app.label, limit: 70)).lineLimit(1).frame(maxWidth: .infinity)
+                            if let icon = model.launcherIcons[app.id] {
+                                Image(nsImage: icon).resizable().interpolation(.high).scaledToFit()
+                                    .frame(width: 32, height: 32)
+                            } else {
+                                Text(label).lineLimit(1).padding(.horizontal, 10).frame(minHeight: 31)
+                                    .background(palette.control.opacity(0.72), in: Capsule())
+                            }
                         }
-                        .buttonStyle(NexusPillStyle(compact: true)).disabled(!canLaunchApps)
+                        .buttonStyle(.plain)
+                        .help(label)
+                        .accessibilityLabel(label)
+                        .disabled(!canLaunchApps)
+                        .opacity(canLaunchApps ? 1 : 0.45)
                     }
                 }
             }
         }
         .task(id: model.launcherAvailable && !peer.isEmpty ? peer : "") { model.refreshLauncher() }
+        .task(id: pins + [peer, model.launcherLists[peer] == nil ? "" : "ready"]) {
+            model.requestLauncherIcons(for: pins)
+        }
         .onChange(of: peer) { _, _ in showingLauncher = false }
     }
 

@@ -557,6 +557,56 @@ final class NexusModel: ObservableObject {
     }
 
     @Published private(set) var launcherLists: [String: [AndroidApp]] = [:]
+    /// Icons of pinned Android apps, by component, kept across launches.
+    @Published private(set) var launcherIcons: [String: NSImage] = NexusModel.loadLauncherIcons()
+    private var requestedIcons: Set<String> = []
+
+    nonisolated static let maxIconRequest = 24
+
+    /// Valid pinned components without a cached icon, in pin order, without repeats, at most 24.
+    nonisolated static func missingIcons(pins: [String], cached: Set<String>) -> [String] {
+        var seen = Set<String>()
+        return pins.filter { pin in
+            AndroidApp(component: pin, label: "").validComponent && !cached.contains(pin) && seen.insert(pin).inserted
+        }.prefix(maxIconRequest).map { $0 }
+    }
+
+    /// Icon bytes only when they are small and decode as an image.
+    nonisolated static func acceptedIcon(_ base64: String) -> Data? {
+        guard base64.utf8.count <= 96 * 1024, let data = Data(base64Encoded: base64), data.count <= 64 * 1024,
+              NSImage(data: data)?.isValid == true else { return nil }
+        return data
+    }
+
+    private static func loadLauncherIcons() -> [String: NSImage] {
+        guard let stored = UserDefaults.standard.data(forKey: "launcher-icons"),
+              let decoded = try? JSONDecoder().decode([String: Data].self, from: stored) else { return [:] }
+        return decoded.compactMapValues { NSImage(data: $0) }
+    }
+
+    func requestLauncherIcons(for pins: [String]) {
+        // Wait for the app list: icons are only accepted for components it contains.
+        guard launcherAvailable, let peer = selected?.id, let apps = launcherLists[peer] else { return }
+        let listed = Set(apps.map(\.id))
+        let missing = Self.missingIcons(pins: pins.filter(listed.contains), cached: Set(launcherIcons.keys).union(requestedIcons))
+        guard !missing.isEmpty else { return }
+        requestedIcons.formUnion(missing)
+        var message = Message("launcherIconsRequest")
+        message.components = missing
+        server?.send(message, to: peer)
+    }
+
+    private func receiveLauncherIcons(_ icons: [AndroidAppIcon], peer: String) {
+        let known = Set((launcherLists[peer] ?? []).map(\.id))
+        var stored = (UserDefaults.standard.data(forKey: "launcher-icons"))
+            .flatMap { try? JSONDecoder().decode([String: Data].self, from: $0) } ?? [:]
+        for icon in icons.prefix(Self.maxIconRequest) where known.contains(icon.component) {
+            guard let data = Self.acceptedIcon(icon.data), let image = NSImage(data: data) else { continue }
+            launcherIcons[icon.component] = image
+            stored[icon.component] = data
+        }
+        UserDefaults.standard.set(try? JSONEncoder().encode(stored), forKey: "launcher-icons")
+    }
 
     var launcherAvailable: Bool {
         active && selected.map { permissions[$0.id]?.launcher == true } == true
@@ -759,6 +809,10 @@ final class NexusModel: ObservableObject {
                 var seen = Set<String>()
                 launcherLists[peer] = apps.prefix(200).filter { $0.validComponent && seen.insert($0.id).inserted }
                     .sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending }
+            }
+        case "launcherIcons":
+            if permissions[peer]?.launcher == true, let icons = message.launcherIcons {
+                receiveLauncherIcons(icons, peer: peer)
             }
         case "adbProofReady":
             if online.contains(peer), let nonce = message.id, Wire.validID(nonce) {
