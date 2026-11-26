@@ -72,7 +72,9 @@ final class NexusModel: ObservableObject {
             advertiseCapabilities()
         }
     }
-    @Published var clipboardEnabled: Bool { didSet { persist(clipboardEnabled, "clipboard"); advertiseCapabilities() } }
+    @Published var clipboardEnabled: Bool {
+        didSet { persist(clipboardEnabled, "clipboard"); advertiseCapabilities(); autoStartClipboardSync() }
+    }
     @Published var historyEnabled: Bool {
         didSet { persist(historyEnabled, "history"); clipboard.recordHistory = historyEnabled }
     }
@@ -187,6 +189,12 @@ final class NexusModel: ObservableObject {
         relay.forward = { [weak self] in self?.server?.send($1, to: $0) }
         clipboard.recordHistory = historyEnabled
         adbClipboard.receive = { [weak self] event in self?.clipboard.receive(event) }
+        adbClipboard.onEnded = { [weak self] in
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(15))
+                self?.autoStartClipboardSync()
+            }
+        }
         screen.send = { [weak self] in self?.server?.send($1, to: $0) }
         gallery.send = { [weak self] in self?.server?.send($1, to: $0) }
         files.didReceive = { [weak self] file in
@@ -815,6 +823,16 @@ final class NexusModel: ObservableObject {
         advertiseCapabilities()
     }
 
+    /// Starts Android → Mac clipboard sync over Wi-Fi ADB by itself, so copies arrive with any keyboard and app.
+    func autoStartClipboardSync() {
+        let connected = active ? selected?.id : nil
+        guard ADBClipboard.shouldAutoStart(clipboardEnabled: clipboardEnabled, device: adbClipboard.wirelessDevice,
+                                           connectedPeer: connected, running: adbClipboard.transport != nil,
+                                           paused: adbClipboard.paused),
+              let device = adbClipboard.wirelessDevice else { return }
+        adbClipboard.startWiFi(device: device)
+    }
+
     private func resetSession(_ peer: String) {
         permissions[peer] = nil
         notifications.removePeer(peer)
@@ -833,6 +851,7 @@ final class NexusModel: ObservableObject {
                 (permissions[peer]?.noticeSync != true ||
                     (message.notifications == true && permissions[peer]?.notifications != true))
             permissions[peer] = message
+            autoStartClipboardSync()
             if shouldRefresh { server?.send(Message("noticeRefresh"), to: peer) }
             updateClipboardImages()
             if message.notifications != true { notifications.removePeer(peer) }

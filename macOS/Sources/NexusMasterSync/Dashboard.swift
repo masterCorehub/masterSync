@@ -923,7 +923,7 @@ struct Dashboard: View {
                     .foregroundStyle(palette.muted)
                 if let transport = model.adbClipboard.transport {
                     Button(transport == .usb ? "Parar sincronização USB" : "Parar sincronização Wi-Fi") {
-                        model.adbClipboard.stop()
+                        model.adbClipboard.stop(userInitiated: true)
                     }.buttonStyle(NexusPillStyle())
                 } else {
                     HStack {
