@@ -4,11 +4,102 @@ import NexusCore
 
 @MainActor
 final class ScreenMirror: ObservableObject {
-    enum ControlRoute: Equatable { case scrcpy, mirror }
+    enum ControlRoute: Equatable { case inApp, scrcpy, mirror }
 
-    /// With ADB over Wi-Fi and scrcpy, control needs no consent on the phone and survives the lock screen.
-    nonisolated static func controlRoute(hasWirelessADB: Bool, scrcpyInstalled: Bool) -> ControlRoute {
-        hasWirelessADB && scrcpyInstalled ? .scrcpy : .mirror
+    /// With ADB over Wi-Fi, control needs no consent on the phone and survives the lock screen: inside the app when the
+    /// scrcpy server is available, in scrcpy's own window when only scrcpy is, and through the phone's screen sharing otherwise.
+    nonisolated static func controlRoute(hasWirelessADB: Bool, scrcpyInstalled: Bool, inAppAvailable: Bool = false) -> ControlRoute {
+        guard hasWirelessADB else { return .mirror }
+        if inAppAvailable { return .inApp }
+        return scrcpyInstalled ? .scrcpy : .mirror
+    }
+
+    // MARK: In-app control (ADB video + input, no permission on the phone)
+
+    let display = PhoneDisplayModel()
+    @Published private(set) var inAppControl = false
+    @Published private(set) var inAppStarting = false
+    private var inAppClient: ScrcpyClient?
+
+    var inAppAvailable: Bool { adbPath != nil && scrcpyPath.flatMap(ScrcpyLaunch.serverURL(forScrcpy:)) != nil }
+
+    func beginInAppControl(wireless: ADBWirelessDevice) {
+        guard !inAppControl, !inAppStarting else { return }
+        guard let adb = adbPath, let scrcpy = scrcpyPath else {
+            feedback = "Instale o ADB e o scrcpy para controlar o Android."
+            return
+        }
+        inAppStarting = true
+        feedback = nil
+        display.reset()
+        let client = ScrcpyClient(adb: adb, scrcpyExecutable: scrcpy)
+        let display = self.display
+        client.onEvent = { event in display.handle(event) }
+        client.onEnded = { [weak self, weak client] reason in
+            Task { @MainActor [weak self] in
+                guard let self, let client, self.inAppClient === client else { return }
+                self.finishInApp(reason: reason)
+            }
+        }
+        inAppClient = client
+        display.send = { [weak client] data in client?.send(data) }
+        Task {
+            do {
+                try await Task.detached {
+                    let session = ADBClipboardSession(adb: adb)
+                    let serial = try await session.wirelessSerial(for: wireless)
+                    try client.start(serial: serial)
+                }.value
+                guard inAppClient === client else { client.stop(); return }
+                inAppStarting = false
+                inAppControl = true
+            } catch {
+                guard inAppClient === client else { return }
+                inAppClient = nil
+                inAppStarting = false
+                feedback = error.localizedDescription
+                client.stop()
+            }
+        }
+    }
+
+    func endInAppControl() {
+        let client = inAppClient
+        inAppClient = nil
+        client?.stop()
+        inAppControl = false
+        inAppStarting = false
+        display.reset()
+    }
+
+    private func finishInApp(reason: String?) {
+        inAppClient?.stop()
+        inAppClient = nil
+        inAppControl = false
+        inAppStarting = false
+        display.reset()
+        if let reason { feedback = reason }
+    }
+
+    /// Opens an app over ADB, then shows the phone in the app window if it is not there yet.
+    func openAppWithInAppControl(_ app: AndroidApp, wireless: ADBWirelessDevice) {
+        guard let adb = adbPath else {
+            feedback = "Instale o ADB para abrir apps do Android."
+            return
+        }
+        feedback = nil
+        Task {
+            do {
+                try await Task.detached {
+                    let session = ADBClipboardSession(adb: adb)
+                    let serial = try await session.wirelessSerial(for: wireless)
+                    try session.openApp(app, serial: serial)
+                }.value
+                beginInAppControl(wireless: wireless)
+            } catch {
+                feedback = error.localizedDescription
+            }
+        }
     }
 
     @Published private(set) var frame: NSImage?
@@ -102,6 +193,12 @@ final class ScreenMirror: ObservableObject {
     }
 
     func pressSystemKey(home: Bool) {
+        if inAppControl {
+            let key = home ? ScrcpyControl.Key.home : ScrcpyControl.Key.back
+            display.send?(ScrcpyControl.keycode(action: ScrcpyControl.Action.down, keycode: key))
+            display.send?(ScrcpyControl.keycode(action: ScrcpyControl.Action.up, keycode: key))
+            return
+        }
         sendInput(["keyevent", home ? "KEYCODE_HOME" : "KEYCODE_BACK"])
     }
 
@@ -163,6 +260,7 @@ final class ScreenMirror: ObservableObject {
     }
 
     func end() {
+        endInAppControl()
         if let peer { send?(peer, Message("screenStop")) }
         clear(nil)
     }

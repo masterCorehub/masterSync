@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 @testable import NexusMasterSync
 import XCTest
@@ -129,5 +130,23 @@ final class ScrcpyDeviceTests: XCTestCase {
         client.send(ScrcpyControl.keycode(action: ScrcpyControl.Action.up, keycode: ScrcpyControl.Key.home))
         Thread.sleep(forTimeInterval: 1.2)
         screenshot(serial, "scrcpy-home")
+    }
+
+    /// The phone's real stream goes through the presenter: it builds a format and the layer never fails.
+    func testRealStreamIsAcceptedByThePresenter() throws {
+        let serial = try serialOrSkip()
+        let client = ScrcpyClient(adb: adb, scrcpyExecutable: scrcpy)
+        let layer = AVSampleBufferDisplayLayer()
+        let presenter = H264Presenter(layer: layer)
+        let collector = Collector()
+        client.onEvent = { collector.add($0); presenter.handle($0) }
+        try client.start(serial: serial)
+        defer { client.stop(wait: true) }
+        XCTAssertTrue(waitForFrame(collector))
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertTrue(presenter.hasFormat)
+        XCTAssertNotEqual(layer.sampleBufferRenderer.status, .failed, "\(String(describing: layer.sampleBufferRenderer.error))")
+        let frames = collector.events.filter { if case .frame = $0 { true } else { false } }.count
+        XCTAssertGreaterThan(frames, 1, "o celular parado também deve mandar quadros de vez em quando")
     }
 }

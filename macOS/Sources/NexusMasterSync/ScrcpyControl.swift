@@ -20,6 +20,11 @@ enum ScrcpyControl {
         nonisolated static let enter: Int32 = 66
         nonisolated static let delete: Int32 = 67
         nonisolated static let appSwitch: Int32 = 187
+        nonisolated static let tab: Int32 = 61
+        nonisolated static let dpadUp: Int32 = 19
+        nonisolated static let dpadDown: Int32 = 20
+        nonisolated static let dpadLeft: Int32 = 21
+        nonisolated static let dpadRight: Int32 = 22
     }
 
     private nonisolated static func be<T: FixedWidthInteger>(_ value: T) -> [UInt8] {

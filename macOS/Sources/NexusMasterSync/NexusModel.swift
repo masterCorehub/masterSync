@@ -707,12 +707,13 @@ final class NexusModel: ObservableObject {
     }
 
     func launchAndroidApp(_ app: AndroidApp) {
-        guard canMirror, let peer = selected?.id, let target = wirelessControlDevice(for: peer),
+        guard canMirror || screen.inAppAvailable, let peer = selected?.id, let target = wirelessControlDevice(for: peer),
               launcherLists[peer]?.contains(where: { $0.id == app.id }) == true else { return }
-        if ScreenMirror.controlRoute(hasWirelessADB: true, scrcpyInstalled: screen.scrcpyInstalled) == .scrcpy {
-            screen.openAppWithScrcpy(app, wireless: target)
-        } else {
-            screen.beginControl(peer, wireless: target, open: app)
+        switch ScreenMirror.controlRoute(hasWirelessADB: true, scrcpyInstalled: screen.scrcpyInstalled,
+                                         inAppAvailable: screen.inAppAvailable) {
+        case .inApp: screen.openAppWithInAppControl(app, wireless: target)
+        case .scrcpy: screen.openAppWithScrcpy(app, wireless: target)
+        case .mirror: screen.beginControl(peer, wireless: target, open: app)
         }
     }
 

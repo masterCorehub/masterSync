@@ -285,8 +285,8 @@ struct Dashboard: View {
     }
 
     private var canLaunchApps: Bool {
-        model.canMirror && model.wirelessControlDevice(for: model.selected?.id) != nil
-            && !model.screen.preparingControl
+        (model.canMirror || model.screen.inAppAvailable) && model.wirelessControlDevice(for: model.selected?.id) != nil
+            && !model.screen.preparingControl && !model.screen.inAppStarting
     }
 
     private var androidLauncher: some View {
@@ -518,10 +518,15 @@ struct Dashboard: View {
 
     private func embeddedPhone(height: CGFloat = 454) -> some View {
         let screen = model.screen
+        let controlActive = (screen.controlling && screen.sharing) || screen.inAppControl
         return VStack(spacing: 6) {
             ZStack {
                 RoundedRectangle(cornerRadius: 28).fill(Color.black.opacity(0.91))
-                if let frame = screen.frame {
+                if screen.inAppControl {
+                    PhoneDisplay(model: screen.display)
+                        .clipShape(RoundedRectangle(cornerRadius: 22))
+                        .accessibilityLabel("Tela interativa do Android")
+                } else if let frame = screen.frame {
                     GeometryReader { canvas in
                         let ratio = frame.size.width / max(frame.size.height, 1)
                         let width = min(canvas.size.width, canvas.size.height * ratio)
@@ -546,7 +551,7 @@ struct Dashboard: View {
                     VStack(spacing: 14) {
                         Image(systemName: "iphone").font(.system(size: 41, weight: .ultraLight))
                             .foregroundStyle(.white.opacity(0.55)).accessibilityHidden(true)
-                        if screen.preparingControl || screen.requesting || screen.sharing {
+                        if screen.preparingControl || screen.requesting || screen.sharing || screen.inAppStarting {
                             ProgressView().controlSize(.small)
                             Text(screen.requesting ? "Autorize no Android" : "Conectando…")
                                 .font(.caption).foregroundStyle(.white)
@@ -575,8 +580,8 @@ struct Dashboard: View {
                     .accessibilityLabel("Encerrar controle").help("Encerrar controle")
             }
             .buttonStyle(NexusPillStyle(compact: true))
-            .disabled(!screen.controlling || !screen.sharing)
-            .opacity(screen.controlling && screen.sharing ? 1 : 0)
+            .disabled(!controlActive)
+            .opacity(controlActive ? 1 : 0)
         }
     }
 
@@ -584,10 +589,11 @@ struct Dashboard: View {
         Button {
             if let peer = model.selected?.id {
                 if let device = model.wirelessControlDevice(for: peer) {
-                    if ScreenMirror.controlRoute(hasWirelessADB: true, scrcpyInstalled: model.screen.scrcpyInstalled) == .scrcpy {
-                        model.screen.launchScrcpy(audioOnly: false, wireless: device)
-                    } else {
-                        model.screen.beginControl(peer, wireless: device)
+                    switch ScreenMirror.controlRoute(hasWirelessADB: true, scrcpyInstalled: model.screen.scrcpyInstalled,
+                                                     inAppAvailable: model.screen.inAppAvailable) {
+                    case .inApp: model.screen.beginInAppControl(wireless: device)
+                    case .scrcpy: model.screen.launchScrcpy(audioOnly: false, wireless: device)
+                    case .mirror: model.screen.beginControl(peer, wireless: device)
                     }
                 } else { openWirelessControlGuide() }
             }
@@ -595,7 +601,8 @@ struct Dashboard: View {
             Label("Controlar", systemImage: "play.fill")
         }
         .buttonStyle(NexusPillStyle(prominent: true, compact: true))
-        .disabled(!model.canMirror)
+        // Control over ADB needs no screen-sharing permission on the phone.
+        .disabled(!(model.canMirror || (model.screen.inAppAvailable && model.wirelessControlDevice(for: model.selected?.id) != nil)))
     }
 
     private enum ConversationEntry: Identifiable {
