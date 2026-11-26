@@ -620,7 +620,11 @@ final class NexusModel: ObservableObject {
     func launchAndroidApp(_ app: AndroidApp) {
         guard canMirror, let peer = selected?.id, let target = wirelessControlDevice(for: peer),
               launcherLists[peer]?.contains(where: { $0.id == app.id }) == true else { return }
-        screen.beginControl(peer, wireless: target, open: app)
+        if ScreenMirror.controlRoute(hasWirelessADB: true, scrcpyInstalled: screen.scrcpyInstalled) == .scrcpy {
+            screen.openAppWithScrcpy(app, wireless: target)
+        } else {
+            screen.beginControl(peer, wireless: target, open: app)
+        }
     }
 
     func requestMirror() {

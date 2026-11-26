@@ -589,7 +589,11 @@ struct Dashboard: View {
         Button {
             if let peer = model.selected?.id {
                 if let device = model.wirelessControlDevice(for: peer) {
-                    model.screen.beginControl(peer, wireless: device)
+                    if ScreenMirror.controlRoute(hasWirelessADB: true, scrcpyInstalled: model.screen.scrcpyInstalled) == .scrcpy {
+                        model.screen.launchScrcpy(audioOnly: false, wireless: device)
+                    } else {
+                        model.screen.beginControl(peer, wireless: device)
+                    }
                 } else { openWirelessControlGuide() }
             }
         } label: {
