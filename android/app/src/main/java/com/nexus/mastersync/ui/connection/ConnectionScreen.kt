@@ -43,9 +43,8 @@ fun ConnectionScreen(nexus: NexusController, background: Boolean, actions: Nexus
             ToggleRow("Manter conexão em segundo plano", background, { actions.toggleBackground() },
                 subtitle = "Recebe do Mac com outro app aberto. O Android mostra uma notificação.")
         }
-        SectionLabel("Macs autorizados")
-        NexusPanel {
-            if (status.peers.isEmpty()) Muted("Nenhum Mac autorizado.")
+        if (status.peers.isNotEmpty()) SectionLabel("Macs autorizados")
+        if (status.peers.isNotEmpty()) NexusPanel {
             status.peers.forEachIndexed { index, peer ->
                 if (index > 0) HorizontalDivider(color = c.control)
                 Row(verticalAlignment = Alignment.CenterVertically) {

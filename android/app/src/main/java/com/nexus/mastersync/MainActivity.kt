@@ -32,7 +32,9 @@ import com.nexus.mastersync.services.ConnectionService
 import com.nexus.mastersync.services.ScanLibrary
 import com.nexus.mastersync.services.ScreenMirrorService
 import com.nexus.mastersync.protocol.Wire
+import com.nexus.mastersync.ui.NexusActions
 import com.nexus.mastersync.ui.NexusScreen
+import com.nexus.mastersync.ui.features.FeatureId
 import com.nexus.mastersync.ui.Tab
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -42,6 +44,7 @@ class MainActivity : ComponentActivity() {
     private val nexus get() = (application as NexusApplication).nexus
     private val library get() = nexus.scans
     private val tab = mutableStateOf(Tab.Home)
+    private val openFeature = mutableStateOf<FeatureId?>(null)
     private val shared = mutableStateOf<Uri?>(null)
     private val documents = mutableStateOf<List<ScanLibrary.Document>>(emptyList())
     private val busy = mutableStateOf(false)
@@ -212,7 +215,7 @@ class MainActivity : ComponentActivity() {
         captureId = savedInstanceState?.getString("scan-capture")?.takeIf(Wire::validID)
         advancedScanPending = savedInstanceState?.getBoolean("scan-advanced") == true
         busy.value = captureId != null || advancedScanPending
-        savedInstanceState?.getString("tab")?.let { name -> Tab.entries.firstOrNull { it.name == name }?.let { tab.value = it } }
+        tab.value = Tab.restore(savedInstanceState?.getString("tab"))
         savedInstanceState?.getString("export-file")?.let { exportTask = File(it) to savedInstanceState.getBoolean("export-png") }
         handle(intent)
         lifecycleScope.launch { documents.value = library.list() }
@@ -225,25 +228,10 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             NexusScreen(
-                nexus = nexus, tab = tab.value, navigate = { tab.value = it },
+                nexus = nexus, actions = actions, tab = tab.value, navigate = { tab.value = it },
+                openFeature = openFeature.value, setOpenFeature = { openFeature.value = it },
                 shared = shared.value, clearShared = { shared.value = null },
-                onQr = ::readQr, onChoose = { chooseFile.launch(arrayOf("*/*")) },
-                onConnection = ::toggleConnection, onNotificationSettings = ::notificationAccess,
-                onApprovePhoto = ::approveInstantCamera,
-                onGalleryAccess = ::requestGallery, onApproveScreen = ::requestScreen,
-                onKeyboardSettings = { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
-                onChooseKeyboard = { getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
-                onScan = { openDocumentCamera() }, onAdvancedScan = { openScanner() },
-                onAcceptScan = { advanced ->
-                    nexus.decideScan(true)?.let { request ->
-                        if (advanced) openScanner(request.peer, request.id)
-                        else openDocumentCamera(request.peer, request.id)
-                    }
-                },
-                documents = documents.value, scannerBusy = busy.value, recognized = recognized.value,
-                onOCR = ::recognize, onDismissOCR = { recognized.value = null },
-                onSendDocument = { document -> nexus.client.status.value.connected?.id?.let { sendDocument(document, it) } },
-                onExport = ::export
+                documents = documents.value, scannerBusy = busy.value, recognized = recognized.value
             )
         }
     }
@@ -296,9 +284,36 @@ class MainActivity : ComponentActivity() {
             val stream: Uri? = if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
                 else intent.getParcelableExtra(Intent.EXTRA_STREAM)
             shared.value = stream?.takeIf { it.scheme == "content" }
-            tab.value = Tab.Share
-        } else if (intent.getBooleanExtra("open-share", false)) tab.value = Tab.Share
-        else if (intent.getBooleanExtra("open-scan", false)) tab.value = Tab.Scan
+            tab.value = Tab.Conversation
+        } else if (intent.getBooleanExtra("open-share", false)) tab.value = Tab.Conversation
+        else if (intent.getBooleanExtra("open-scan", false)) {
+            tab.value = Tab.Home
+            openFeature.value = FeatureId.Scan
+        }
+    }
+
+    private val actions by lazy {
+        NexusActions(
+            readQr = ::readQr, chooseFile = { chooseFile.launch(arrayOf("*/*")) },
+            toggleBackground = ::toggleConnection, openNotificationAccess = ::notificationAccess,
+            openDndAccess = { startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) },
+            openAppSettings = {
+                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+            },
+            requestGallery = ::requestGallery, approvePhoto = ::approveInstantCamera, approveScreen = ::requestScreen,
+            keyboardSettings = { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
+            chooseKeyboard = { getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
+            scan = { openDocumentCamera() }, advancedScan = { openScanner() },
+            acceptScan = { advanced ->
+                nexus.decideScan(true)?.let { request ->
+                    if (advanced) openScanner(request.peer, request.id)
+                    else openDocumentCamera(request.peer, request.id)
+                }
+            },
+            ocr = ::recognize, dismissOcr = { recognized.value = null },
+            sendDocument = { document -> nexus.client.status.value.connected?.id?.let { sendDocument(document, it) } },
+            export = ::export
+        )
     }
 
     private fun readQr() {
@@ -365,7 +380,7 @@ class MainActivity : ComponentActivity() {
 
     private fun openDocumentCamera(authorizedPeer: String? = null, requestID: String? = null) {
         if (busy.value) return
-        tab.value = Tab.Scan
+        openFeature.value = FeatureId.Scan
         nexus.note("")
         scanPeer = nexus.scanDestination(authorizedPeer)
         scanRequestID = requestID
