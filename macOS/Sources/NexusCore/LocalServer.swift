@@ -19,6 +19,10 @@ public final class LocalServer {
 
     public private(set) var peers: [Peer] = []
     public private(set) var online: Set<String> = []
+    private var peerHosts: [String: String] = [:]
+
+    /// Where a connected phone is on the network right now, so tools that need its address can follow it between networks.
+    public func host(of peerID: String) -> String? { online.contains(peerID) ? peerHosts[peerID] : nil }
     public private(set) var status: [String: DeviceStatus] = [:]
     public private(set) var pending: Pending?
     public private(set) var port: UInt16?
@@ -260,6 +264,7 @@ public final class LocalServer {
         sessions[peer.id] = connectionID
         if let previous, previous != connectionID { connections[previous]?.close() }
         online.insert(peer.id)
+        peerHosts[peer.id] = link.remoteHost
         status[peer.id] = nil
         link.expire(in: 35)
         link.onMessage = { [weak self, weak link] message in
@@ -299,6 +304,7 @@ public final class LocalServer {
         if let peerID = sessions.first(where: { $0.value == id })?.key {
             sessions[peerID] = nil
             online.remove(peerID)
+            peerHosts[peerID] = nil
             status[peerID] = nil
         }
         onUpdate?()

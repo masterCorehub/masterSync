@@ -10,6 +10,19 @@ final class FramedConnection {
 
     init(_ socket: NWConnection) { self.socket = socket }
 
+    /// The IPv4 address the other side connected from, when it has one.
+    var remoteHost: String? { Self.ipv4(from: socket.currentPath?.remoteEndpoint ?? socket.endpoint) }
+
+    /// IPv4 only: a plain IPv4 host, or an IPv4 carried inside an IPv6 address. Anything else is not usable for ADB.
+    static func ipv4(from endpoint: NWEndpoint?) -> String? {
+        guard case let .hostPort(host, _)? = endpoint else { return nil }
+        switch host {
+        case .ipv4(let address): return "\(address)".split(separator: "%").first.map(String.init)
+        case .ipv6(let address): return address.asIPv4.map { "\($0)".split(separator: "%").first.map(String.init) ?? "" }
+        default: return nil
+        }
+    }
+
     func start() {
         expire(in: 12)
         socket.stateUpdateHandler = { [weak self] state in
