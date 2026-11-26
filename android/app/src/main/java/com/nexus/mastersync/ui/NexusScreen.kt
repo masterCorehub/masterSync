@@ -7,6 +7,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -139,7 +140,7 @@ fun NexusScreen(
                     }
                 }
             ) { insets ->
-                Column(Modifier.padding(insets).padding(horizontal = 20.dp).fillMaxSize(),
+                Column(Modifier.padding(insets).consumeWindowInsets(insets).padding(horizontal = 20.dp).fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (mirroring) Banner("Sua tela está sendo compartilhada com o Mac.", "Parar", nexus::stopMirror)
                     if (message.isNotBlank()) Banner(message, "Fechar") { nexus.note("") }

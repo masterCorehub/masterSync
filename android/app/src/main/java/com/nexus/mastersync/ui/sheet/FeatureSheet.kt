@@ -52,10 +52,14 @@ import com.nexus.mastersync.ui.features.Feature
 import com.nexus.mastersync.ui.features.FeatureId
 import com.nexus.mastersync.ui.features.StepAction
 import com.nexus.mastersync.ui.theme.LocalNexusColors
+import android.text.format.Formatter
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
+import com.nexus.mastersync.ui.conversation.allReceived
 import java.text.DateFormat
 import java.util.Date
 
-private enum class Subpage { Apps, Documents }
+private enum class Subpage { Apps, Documents, Received }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,6 +83,10 @@ fun FeatureSheet(feature: Feature, nexus: NexusController, actions: NexusActions
                 Subpage.Apps -> {
                     SubpageHeader("Apps que aparecem no Mac") { subpage = null }
                     AppsList(nexus, options)
+                }
+                Subpage.Received -> {
+                    SubpageHeader("Arquivos recebidos") { subpage = null }
+                    ReceivedList(nexus, actions)
                 }
                 Subpage.Documents -> {
                     SubpageHeader("Digitalizações") { subpage = null }
@@ -164,18 +172,21 @@ private fun FeatureOptions(feature: Feature, nexus: NexusController, options: Ne
                 }
                 HorizontalDivider(color = LocalNexusColors.current.control)
                 Text("Teclado Nexus (opcional)", style = MaterialTheme.typography.bodyLarge)
-                if (keyboard) Muted("Selecionado: cópias seguem para o Mac com outro app em foco.")
-                else {
-                    Muted("Envia cópias ao Mac sem abrir o MasterSync.")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Pill("Ativar", actions.keyboardSettings)
-                        Pill("Escolher teclado", actions.chooseKeyboard)
-                    }
+                Muted(if (keyboard) "Selecionado: cópias seguem para o Mac com outro app em foco."
+                    else "Envia cópias ao Mac sem abrir o MasterSync.")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!keyboard) Pill("Ativar", actions.keyboardSettings)
+                    Pill("Escolher teclado", actions.chooseKeyboard)
                 }
             }
         }
-        FeatureId.Files -> OptionsPanel {
-            Muted("Envie pela Conversa ou pelo menu Compartilhar de qualquer app.")
+        FeatureId.Files -> {
+            val received by nexus.transfers.received.collectAsStateWithLifecycle()
+            OptionsPanel {
+                Muted("Envie pela Conversa ou pelo menu Compartilhar de qualquer app.")
+                HorizontalDivider(color = LocalNexusColors.current.control)
+                LinkRow("Arquivos recebidos", "${received.size}") { open(Subpage.Received) }
+            }
         }
         FeatureId.Gallery -> if (options.gallery) OptionsPanel {
             ToggleRow("Enviar novas fotos e vídeos ao Mac", options.syncNewMedia,
@@ -188,6 +199,13 @@ private fun FeatureOptions(feature: Feature, nexus: NexusController, options: Ne
                 ToggleRow("Ocultar conteúdo", options.hideNotifications, { nexus.update(options.copy(hideNotifications = it)) })
                 ToggleRow("Controle de mídia", options.mediaControl, { nexus.update(options.copy(mediaControl = it)) },
                     subtitle = "Pausar e trocar faixa pelo Mac")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Acesso às notificações", style = MaterialTheme.typography.bodyLarge)
+                        Muted("Revise ou remova o acesso no Android")
+                    }
+                    Pill("Abrir", actions.openNotificationAccess)
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Controle do Não Perturbe", style = MaterialTheme.typography.bodyLarge)
@@ -231,6 +249,26 @@ private fun AppsList(nexus: NexusController, options: NexusController.Options) {
             ToggleRow(label, id !in options.blockedApps, {
                 nexus.update(options.copy(blockedApps = if (it) options.blockedApps - id else options.blockedApps + id))
             })
+        }
+    }
+}
+
+@Composable
+private fun ReceivedList(nexus: NexusController, actions: NexusActions) {
+    val received by nexus.transfers.received.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val items = remember(received) { allReceived(received) }
+    NexusPanel {
+        if (items.isEmpty()) Muted("Nenhum arquivo recebido.")
+        items.forEach { entry ->
+            val item = entry.received.item
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(item.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                    Muted(Formatter.formatShortFileSize(context, item.size))
+                }
+                TextButton(onClick = { actions.export(entry.received.file, item.mime, item.name, false) }) { Text("Salvar") }
+            }
         }
     }
 }

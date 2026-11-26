@@ -82,8 +82,7 @@ fun ConversationScreen(nexus: NexusController, actions: NexusActions, shared: Ur
     fun size(bytes: Long) = Formatter.formatShortFileSize(context, bytes)
 
     Column(Modifier.fillMaxSize()) {
-        val banner = blocker ?: fileBlocker.takeIf { shared != null }
-        when (banner) {
+        when (conversationBanner(blocker, fileBlocker, shared != null)) {
             ChatBlocker.Disconnected -> Banner("Mac desconectado", "Conectar", onOpenConnection)
             ChatBlocker.ChatOffOnMac -> Banner("Ative a Conversa no app do Mac", null) {}
             ChatBlocker.FilesOff -> Banner("Arquivos desligado", "Abrir") { onOpenFeature(FeatureId.Files) }
@@ -93,7 +92,8 @@ fun ConversationScreen(nexus: NexusController, actions: NexusActions, shared: Ur
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list,
             contentPadding = PaddingValues(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (items.isEmpty() && progress.isEmpty()) item {
-                Muted("Mensagens e arquivos trocados com o Mac aparecem aqui.", Modifier.padding(top = 24.dp))
+                Muted(if (connected) "Mensagens e arquivos trocados com o Mac aparecem aqui."
+                    else "Arquivos já recebidos ficam em Início → Arquivos → Arquivos recebidos.", Modifier.padding(top = 24.dp))
             }
             items(items) { item ->
                 when (item) {

@@ -40,3 +40,12 @@ fun chatBlocker(connected: Boolean, options: NexusController.Options, permission
     wantsFiles && !(options.files && permissions.files) -> ChatBlocker.FilesOff
     else -> null
 }
+
+/** With a shared file waiting, the file problem is the one that blocks the user's next step, so it wins. */
+fun conversationBanner(chat: ChatBlocker?, files: ChatBlocker?, hasSharedFile: Boolean): ChatBlocker? =
+    if (hasSharedFile) files ?: chat else chat
+
+/** Every received file, from any Mac, newest first — reachable even when no Mac is connected. */
+fun allReceived(received: List<TransferQueue.Received>,
+                modified: (File) -> Long = File::lastModified): List<TimelineItem.ReceivedFile> =
+    received.map { TimelineItem.ReceivedFile(it, modified(it.file)) }.sortedByDescending { it.time }

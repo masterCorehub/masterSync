@@ -6,7 +6,9 @@ import com.nexus.mastersync.NexusController.Permissions
 import com.nexus.mastersync.services.TransferQueue
 import com.nexus.mastersync.ui.conversation.ChatBlocker
 import com.nexus.mastersync.ui.conversation.TimelineItem
+import com.nexus.mastersync.ui.conversation.allReceived
 import com.nexus.mastersync.ui.conversation.chatBlocker
+import com.nexus.mastersync.ui.conversation.conversationBanner
 import com.nexus.mastersync.ui.conversation.timeline
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -61,4 +63,22 @@ class TimelineTest {
 
     @Test fun textOnlyIgnoresFiles() =
         assertNull(chatBlocker(true, Options(files = false), Permissions(chat = true), wantsFiles = false))
+
+    @Test fun sharedFileBannerPrefersFileProblemOverChatOff() =
+        assertEquals(ChatBlocker.FilesOff,
+            conversationBanner(chat = ChatBlocker.ChatOffOnMac, files = ChatBlocker.FilesOff, hasSharedFile = true))
+
+    @Test fun withoutSharedFileBannerShowsChatProblem() =
+        assertEquals(ChatBlocker.ChatOffOnMac,
+            conversationBanner(chat = ChatBlocker.ChatOffOnMac, files = ChatBlocker.FilesOff, hasSharedFile = false))
+
+    @Test fun sharedFileWithOnlyChatOffShowsChatBanner() =
+        assertEquals(ChatBlocker.ChatOffOnMac,
+            conversationBanner(chat = ChatBlocker.ChatOffOnMac, files = null, hasSharedFile = true))
+
+    @Test fun receivedFilesListsEveryPeerNewestFirst() {
+        val files = allReceived(listOf(received("a", "old.png"), received("b", "new.png")),
+            modified = { if (it.name == "new.png") 20 else 10 })
+        assertEquals(listOf("new.png", "old.png"), files.map { it.received.item.name })
+    }
 }
