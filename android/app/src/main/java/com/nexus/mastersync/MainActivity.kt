@@ -226,6 +226,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        lifecycleScope.launch {
+            // A scan the Mac opened MasterSync for over ADB goes straight to the camera.
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                nexus.pendingScan.collect { request ->
+                    if (request != null && nexus.scanAutoAccept.consume(request.id, android.os.SystemClock.elapsedRealtime())) {
+                        actions.acceptScan(false)
+                    }
+                }
+            }
+        }
         setContent {
             NexusScreen(
                 nexus = nexus, actions = actions, tab = tab.value, navigate = { tab.value = it },
@@ -286,6 +296,13 @@ class MainActivity : ComponentActivity() {
             shared.value = stream?.takeIf { it.scheme == "content" }
             tab.value = Tab.Conversation
         } else if (intent.getBooleanExtra("open-share", false)) tab.value = Tab.Conversation
+        else if (intent.getStringExtra("accept-scan") != null) {
+            tab.value = Tab.Home
+            nexus.scanAutoAccept.expect(intent.getStringExtra("accept-scan").orEmpty(), android.os.SystemClock.elapsedRealtime())
+            nexus.pendingScan.value?.let { request ->
+                if (nexus.scanAutoAccept.consume(request.id, android.os.SystemClock.elapsedRealtime())) actions.acceptScan(false)
+            }
+        }
         else if (intent.getBooleanExtra("open-scan", false)) {
             tab.value = Tab.Home
             openFeature.value = FeatureId.Scan

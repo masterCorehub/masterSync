@@ -681,6 +681,9 @@ final class NexusModel: ObservableObject {
         var message = Message("scanRequest")
         message.id = id
         server?.send(message, to: peer)
+        openScanCameraOverADB(peer: peer, id: id) { [weak self] opened in
+            if opened, self?.scanPasteRequest?.id == id { self?.scanPasteFeedback = "Abrindo a câmera no Android…" }
+        }
         Task {
             try? await Task.sleep(for: .seconds(180))
             if scanPasteRequest?.id == id {
@@ -713,8 +716,28 @@ final class NexusModel: ObservableObject {
 
     func requestScan() {
         guard let peer = selected, canRequestScan else { return }
-        server?.send(Message("scanRequest"), to: peer.id)
+        var message = Message("scanRequest")
+        message.id = Wire.id()
+        server?.send(message, to: peer.id)
         scanRequestFeedback = "Solicitação enviada. Confirme a abertura do scanner no celular."
+        if let id = message.id {
+            openScanCameraOverADB(peer: peer.id, id: id) { [weak self] opened in
+                if opened { self?.scanRequestFeedback = "Abrindo a câmera no Android…" }
+            }
+        }
+    }
+
+    /// With ADB over Wi-Fi, opens the camera on the phone directly instead of waiting for a tap there.
+    private func openScanCameraOverADB(peer: String, id: String, done: @escaping (Bool) -> Void) {
+        guard let device = wirelessControlDevice(for: peer), let adb = ADBClipboard.adbExecutable else { return }
+        Task {
+            let opened = await Task.detached {
+                let session = ADBClipboardSession(adb: adb)
+                guard let serial = try? await session.wirelessSerial(for: device) else { return false }
+                return (try? session.openScanCamera(serial: serial, requestID: id)) != nil
+            }.value
+            done(opened)
+        }
     }
 
     private func persist(_ value: Bool, _ key: String) { preferences.set(value, forKey: key) }

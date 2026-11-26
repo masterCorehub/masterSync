@@ -130,6 +130,7 @@ class NexusController(val context: Context) {
     data class ScanRequest(val peer: String, val id: String?)
     private val scanRequest = MutableStateFlow<ScanRequest?>(null)
     val pendingScan = scanRequest.asStateFlow()
+    val scanAutoAccept = com.nexus.mastersync.services.ScanAutoAccept()
     private val photoRequest = MutableStateFlow<CameraRequest?>(null)
     val pendingPhoto = photoRequest.asStateFlow()
     private var capturingPhoto: CameraRequest? = null

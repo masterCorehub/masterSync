@@ -96,6 +96,8 @@ final class ADBClipboard: ObservableObject {
         }
     }
 
+    static var adbExecutable: String? { adbPath }
+
     private static var adbPath: String? {
         ["/opt/homebrew/bin/adb", "/usr/local/bin/adb",
          NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb"]
@@ -400,6 +402,26 @@ final class ADBClipboardSession: @unchecked Sendable {
             if let input = command.input { try? input.close() }
             else if command.process.isRunning { command.process.terminate() }
         }
+    }
+
+    static let mastersyncPackages = ["com.nexus.mastersync", "com.nexus.mastersync.direct"]
+
+    /// `am start` arguments that open MasterSync and let it accept scan `id` without asking. Quoted for the remote shell.
+    static func scanCameraArguments(serial: String, package: String, id: String) -> [String]? {
+        guard Wire.validID(id), mastersyncPackages.contains(package) else { return nil }
+        return ["-s", serial, "shell", "am", "start", "-n", "'\(package)/com.nexus.mastersync.MainActivity'",
+                "--es", "accept-scan", "'\(id)'"]
+    }
+
+    /// Opens MasterSync on the phone for scan `id`, trying the full edition first and then the direct one.
+    func openScanCamera(serial: String, requestID: String) throws {
+        for package in Self.mastersyncPackages {
+            guard let arguments = Self.scanCameraArguments(serial: serial, package: package, id: requestID) else { continue }
+            let result = try capture(arguments, diagnostics: true)
+            let output = String(decoding: result.0, as: UTF8.self).lowercased()
+            if result.1 == 0, !output.contains("error"), !output.contains("exception") { return }
+        }
+        throw NexusError.transfer("O Android não abriu a câmera do MasterSync.")
     }
 
     private func capture(_ arguments: [String], input: Data? = nil, diagnostics: Bool = false) throws -> (Data, Int32) {
