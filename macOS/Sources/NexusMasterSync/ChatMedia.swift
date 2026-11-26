@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import SystemConfiguration
 
 /// What the conversation shows for a file or message: image previews and who sent it.
 enum ChatMedia {
@@ -8,6 +9,11 @@ enum ChatMedia {
     ]
 
     nonisolated static func isImage(mime: String) -> Bool { previewMimes.contains(mime.lowercased()) }
+
+    /// This Mac's name, read once. `Host.current()` can wait on the network, which must never happen while drawing.
+    nonisolated static let localDeviceName: String = {
+        (SCDynamicStoreCopyComputerName(nil, nil) as String?) ?? Host.current().localizedName ?? ""
+    }()
 
     nonisolated static func senderName(outgoing: Bool, local: String, peer: String) -> String {
         let name = (outgoing ? local : peer).trimmingCharacters(in: .whitespacesAndNewlines)

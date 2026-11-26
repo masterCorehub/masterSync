@@ -24,7 +24,11 @@ struct ChatImage: View {
         .help(item.offer.name)
         .task(id: item.url) {
             let url = item.url
-            let loaded = await Task.detached(priority: .utility) { ChatMedia.thumbnail(url: url, maxPixel: 560) }.value
+            // A row can be handed another file; never show the previous one's picture while this one loads.
+            image = ThumbnailCache.cached(url: url, maxPixel: 560)
+            failed = false
+            guard image == nil else { return }
+            let loaded = await Task.detached(priority: .utility) { ThumbnailCache.image(url: url, maxPixel: 560) }.value
             image = loaded
             failed = loaded == nil
         }

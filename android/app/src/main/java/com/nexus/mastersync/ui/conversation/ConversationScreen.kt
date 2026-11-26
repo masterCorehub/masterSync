@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -238,9 +239,22 @@ private fun FileCard(name: String, detail: String, outgoing: Boolean, caption: S
 }
 
 private sealed interface ImagePreview {
-    data object Loading : ImagePreview
+    data class Loading(val size: ChatMedia.Size?) : ImagePreview
     data object Failed : ImagePreview
     data class Ready(val bitmap: ImageBitmap) : ImagePreview
+}
+
+/** Decoded previews stay for the next time a row scrolls back into view, within an eighth of the app's memory. */
+private val previewCache = ByteLruCache<ImagePreview.Ready>(Runtime.getRuntime().maxMemory() / 8) {
+    it.bitmap.width.toLong() * it.bitmap.height * 4
+}
+
+private fun readBounds(file: File): Pair<Int, Int>? = try {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.path, bounds)
+    if (bounds.outWidth > 0 && bounds.outHeight > 0) bounds.outWidth to bounds.outHeight else null
+} catch (_: Throwable) {
+    null
 }
 
 /** Decodes a reduced copy off the main thread; any failure (including out of memory) means "show the card". */
@@ -274,14 +288,24 @@ private fun upright(bitmap: Bitmap, file: File): Bitmap {
 @Composable
 private fun ImageBubble(file: File, caption: String, detail: String, onSave: () -> Unit, fallback: @Composable () -> Unit) {
     val c = LocalNexusColors.current
-    val preview by produceState<ImagePreview>(ImagePreview.Loading, file.path, file.lastModified()) {
-        value = withContext(Dispatchers.IO) { decodePreview(file) }
+    val density = LocalDensity.current.density
+    val key = remember(file.path) { "${file.path}:${file.lastModified()}" }
+    val preview by produceState<ImagePreview>(previewCache.get(key) ?: ImagePreview.Loading(null), key) {
+        if (value is ImagePreview.Ready) return@produceState
+        // Reserve the final size first, so the row does not grow (and push content away) when the image arrives.
+        val bounds = withContext(Dispatchers.IO) { readBounds(file) }
+        value = ImagePreview.Loading(bounds?.let { ChatMedia.displaySize(it.first, it.second, density) })
+        val decoded = withContext(Dispatchers.IO) { decodePreview(file) }
+        if (decoded is ImagePreview.Ready) previewCache.put(key, decoded)
+        value = decoded
     }
     when (val state = preview) {
         ImagePreview.Failed -> fallback()
-        ImagePreview.Loading -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
+        is ImagePreview.Loading -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
             Caption(caption)
-            Box(Modifier.size(200.dp, 140.dp).background(c.control, RoundedCornerShape(14.dp)))
+            val reserved = state.size
+            Box((if (reserved != null) Modifier.size(reserved.widthDp.dp, reserved.heightDp.dp) else Modifier.size(200.dp, 140.dp))
+                .background(c.control, RoundedCornerShape(14.dp)))
         }
         is ImagePreview.Ready -> Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
             Caption(caption)

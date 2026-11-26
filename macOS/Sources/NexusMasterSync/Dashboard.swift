@@ -681,8 +681,7 @@ struct Dashboard: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 54)
                         }
-                        ForEach(entries.indices, id: \.self) { index in
-                            let entry = entries[index]
+                        ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                             if index == 0 || !calendar.isDate(entries[index - 1].date, inSameDayAs: entry.date) {
                                 Text(entry.date, style: .date)
                                     .font(.caption.weight(.medium)).foregroundStyle(palette.muted)
@@ -737,7 +736,7 @@ struct Dashboard: View {
 
     private func conversationBubble(_ entry: ConversationEntry) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(ChatMedia.senderName(outgoing: entry.outgoing, local: Host.current().localizedName ?? "",
+            Text(ChatMedia.senderName(outgoing: entry.outgoing, local: ChatMedia.localDeviceName,
                                       peer: model.selected?.name ?? ""))
                 .font(.caption2.weight(.semibold)).foregroundStyle(palette.muted).lineLimit(1)
             switch entry {

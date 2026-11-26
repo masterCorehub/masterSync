@@ -18,6 +18,21 @@ object ChatMedia {
         return sample
     }
 
+    const val MAX_DISPLAY_DP = 280f
+
+    data class Size(val widthDp: Float, val heightDp: Float)
+
+    /**
+     * The room a preview will take, so the placeholder can reserve it before decoding: the image is decoded at
+     * [sampleSize] and shown at its own size, at most [MAX_DISPLAY_DP] wide.
+     */
+    fun displaySize(width: Int, height: Int, density: Float): Size? {
+        if (width <= 0 || height <= 0 || density <= 0f) return null
+        val decodedWidth = width / sampleSize(width, height)
+        val widthDp = minOf(MAX_DISPLAY_DP, decodedWidth / density)
+        return Size(widthDp, widthDp * height / width)
+    }
+
     data class Span(val text: String, val url: String?)
 
     fun linkSpans(text: String): List<Span> {
