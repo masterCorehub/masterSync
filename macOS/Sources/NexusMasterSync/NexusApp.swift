@@ -21,6 +21,9 @@ struct NexusApp: App {
                 .preferredColorScheme(preferredScheme)
                 .frame(minWidth: 780, minHeight: 570)
                 .task { model.launch() }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    model.screen.stopUSB()
+                }
         }
         .defaultSize(width: 1170, height: 760)
         .windowStyle(.hiddenTitleBar)
@@ -72,13 +75,16 @@ struct NexusApp: App {
                     Text("Nenhum celular conectado").foregroundStyle(.secondary)
                 }
                 if model.screen.sharing { Button("Parar espelhamento") { model.screen.end() } }
-                if model.screen.usbActive { Button("Encerrar controle USB") { model.screen.stopUSB() } }
+                if model.screen.usbActive { Button("Encerrar sessão do scrcpy") { model.screen.stopUSB() } }
                 Divider()
                 Button("Abrir visão geral") { model.section = .overview; showWindow() }
                 Button("Enviar arquivo") { model.section = .files; showWindow() }
                 Button("Dispositivos") { model.section = .devices; showWindow() }
                 Divider()
-                Button("Encerrar Nexus masterSync") { NSApp.terminate(nil) }
+                Button("Encerrar Nexus masterSync") {
+                    model.screen.stopUSB()
+                    NSApp.terminate(nil)
+                }
             }
             .padding(16)
             .frame(width: 245, alignment: .leading)

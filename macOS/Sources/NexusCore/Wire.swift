@@ -96,11 +96,18 @@ public struct Message: Codable {
     public var app: String?
     public var at: Int64?
     public var canReply: Bool?
+    public var canDismiss: Bool?
+    public var noticeSync: Bool?
+    public var notices: [Message]?
+    public var dndAllowed: Bool?
+    public var dndEnabled: Bool?
     public var group: String?
     public var clipboard: Bool?
     public var files: Bool?
     public var notifications: Bool?
     public var scanner: Bool?
+    public var scanPaste: Bool?
+    public var instantCamera: Bool?
     public var gallery: Bool?
     public var galleryRevision: Int?
     public var backgroundConnection: Bool?
@@ -115,13 +122,31 @@ public struct Message: Codable {
     public var addedFrom: Int64?
     public var addedBefore: Int64?
     public var order: String?
+    public var chat: Bool?
+    public var adbProof: Bool?
+    public var launcher: Bool?
+    public var launcherApps: [AndroidApp]?
+    public var screenWidth: Int?
+    public var screenHeight: Int?
     public var mirror: Bool?
     public var findPhone: Bool?
     public var mediaControl: Bool?
+    public var playing: Bool?
     public var rate: Int?
     public var quality: Int?
 
     public init(_ type: String) { self.type = type }
+}
+
+public struct AndroidApp: Codable, Identifiable {
+    public let component: String
+    public let label: String
+    public var id: String { component }
+
+    public var validComponent: Bool {
+        component.utf8.count <= 220
+            && component.range(of: #"\A[A-Za-z0-9_.]+/[A-Za-z0-9_.$]+\z"#, options: .regularExpression) != nil
+    }
 }
 
 public struct MediaEntry: Codable, Identifiable {

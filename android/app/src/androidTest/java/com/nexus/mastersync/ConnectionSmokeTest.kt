@@ -48,7 +48,16 @@ class ConnectionSmokeTest {
                     bitmap.eraseColor(Color.WHITE)
                     jpeg.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it)) }
                 } finally { bitmap.recycle() }
-                instrumentation.runOnMainSync { nexus.setVisible(false) }
+                instrumentation.runOnMainSync {
+                    nexus.requestBackgroundConnection(true)
+                    check(nexus.beginBackgroundStart())
+                    nexus.setVisible(false)
+                    assertEquals(peer.id, nexus.client.status.value.connected?.id)
+                    nexus.setBackground(true)
+                    assertEquals(peer.id, nexus.client.status.value.connected?.id)
+                    // Stopping the service allows the original disconnect-and-resume test to continue.
+                    nexus.setBackground(false)
+                }
                 assertEquals(null, nexus.client.status.value.connected)
                 val destination = nexus.scanDestination(null)
                 assertEquals(peer.id, destination)
@@ -63,7 +72,10 @@ class ConnectionSmokeTest {
             }
         } finally {
             file.delete()
-            instrumentation.runOnMainSync { nexus.setVisible(false) }
+            instrumentation.runOnMainSync {
+                nexus.setBackground(false)
+                nexus.setVisible(false)
+            }
         }
     }
 }

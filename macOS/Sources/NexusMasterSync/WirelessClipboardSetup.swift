@@ -2,6 +2,8 @@ import SwiftUI
 
 struct WirelessClipboardSetup: View {
     let device: ADBWirelessDevice?
+    var guided = false
+    var busy = false
     let connect: (ADBWirelessDevice, ADBPairing?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var needsPairing = true
@@ -18,7 +20,7 @@ struct WirelessClipboardSetup: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Label("Área de transferência por Wi-Fi", systemImage: "wifi").font(.title2.weight(.semibold))
+            Label(guided ? "4 de 4 · Depuração sem fio" : "Área de transferência por Wi-Fi", systemImage: "wifi").font(.title2.weight(.semibold))
             Text("No Android 11 ou superior, abra Opções do desenvolvedor → Depuração sem fio. Mantenha os dois aparelhos na mesma rede.")
                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Toggle("Parear este Mac com um código", isOn: $needsPairing)
@@ -34,19 +36,19 @@ struct WirelessClipboardSetup: View {
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer()
-                Button("Cancelar", role: .cancel) { dismiss() }
-                Button(needsPairing ? "Parear e ativar" : "Conectar e ativar") {
+                if !guided { Button("Cancelar", role: .cancel) { dismiss() } }
+                Button(needsPairing ? "Parear e conectar" : "Testar conexão") {
                     let previous = needsPairing ? nil : device
                     connect(ADBWirelessDevice(address: endpoint?.address, service: previous?.service,
                                               deviceID: previous?.deviceID), needsPairing ? pairing : nil)
                     pairingCode = ""
-                    dismiss()
-                }.disabled(!valid).buttonStyle(NexusPillStyle(prominent: true)).keyboardShortcut(.defaultAction)
+                    if !guided { dismiss() }
+                }.disabled(!valid || busy).buttonStyle(NexusPillStyle(prominent: true)).keyboardShortcut(.defaultAction)
             }
         }
         .textFieldStyle(.roundedBorder)
-        .padding(24)
-        .frame(width: 520)
+        .padding(guided ? 0 : 24)
+        .frame(width: guided ? nil : 520)
         .onAppear {
             needsPairing = device == nil
             connectionAddress = device?.address ?? ""

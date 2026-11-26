@@ -4,7 +4,8 @@ import Foundation
 import NexusCore
 
 enum Section: String, CaseIterable, Identifiable {
-    case overview = "Visão geral"
+    case overview = "Celular"
+    case conversation = "Conversa"
     case clipboard = "Área de transferência"
     case documents = "Documentos"
     case gallery = "Galeria"
@@ -17,7 +18,8 @@ enum Section: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var icon: String {
         switch self {
-        case .overview: "rectangle.grid.1x2"
+        case .overview: "iphone"
+        case .conversation: "bubble.left.and.bubble.right"
         case .clipboard: "document.on.clipboard"
         case .documents: "doc.viewfinder"
         case .gallery: "photo.on.rectangle.angled"
@@ -39,6 +41,16 @@ final class NexusModel: ObservableObject {
         let icon: String
     }
 
+    struct ChatEntry: Identifiable, Codable {
+        let id: String
+        let peer: String
+        let text: String
+        let outgoing: Bool
+        let date: Date
+        var confirmed: Bool
+    }
+
+    @Published private(set) var messages: [ChatEntry] = []
     @Published var section = Section.overview
     @Published private(set) var peers: [Peer] = []
     @Published private(set) var online: Set<String> = []
@@ -50,11 +62,13 @@ final class NexusModel: ObservableObject {
     @Published private(set) var networkProblem: String?
     @Published private(set) var otherCopyRunning = false
     @Published var problem: String?
+    @Published private(set) var keychainUnavailable = false
+    @Published private(set) var temporaryNetwork = false
     @Published var invitation: Invitation?
     @Published private(set) var permissions: [String: Message] = [:]
     @Published var selectedID: String? {
         didSet {
-            if oldValue != selectedID { screen.end() }
+            if oldValue != selectedID { screen.end(); screen.stopUSB() }
             advertiseCapabilities()
         }
     }
@@ -67,11 +81,11 @@ final class NexusModel: ObservableObject {
         didSet { persist(notificationsEnabled, "notifications"); updateNotifications(); advertiseCapabilities() }
     }
     @Published var hideNotices: Bool {
-        didSet { persist(hideNotices, "hide-notices"); updateNotifications(); notifications.removeAll() }
+        didSet { persist(hideNotices, "hide-notices"); updateNotifications(); notifications.removeAll(); refreshNotices() }
     }
     @Published var quiet: Bool { didSet { persist(quiet, "quiet"); updateNotifications() } }
     @Published var blockedApps: Set<String> {
-        didSet { preferences.set(Array(blockedApps), forKey: "blocked-apps"); updateNotifications(); notifications.removeAll() }
+        didSet { preferences.set(Array(blockedApps), forKey: "blocked-apps"); updateNotifications(); notifications.removeAll(); refreshNotices() }
     }
     @Published var theme: String { didSet { preferences.set(theme, forKey: "theme") } }
     @Published var devicesShortcut: String { didSet { preferences.set(devicesShortcut, forKey: "shortcut-devices") } }
@@ -80,7 +94,48 @@ final class NexusModel: ObservableObject {
         didSet { persist(galleryEnabled, "gallery"); advertiseCapabilities() }
     }
     @Published var scanRequestFeedback: String?
+    @Published var scanPasteEnabled = UserDefaults.standard.bool(forKey: "global-scan-paste") {
+        didSet {
+            preferences.set(scanPasteEnabled, forKey: "global-scan-paste")
+            if scanPasteEnabled { registerScanPaste() }
+            else {
+                scanPasteShortcut.unregister()
+                scanPasteRequest = nil
+                scanPasteFeedback = nil
+            }
+        }
+    }
+    @Published private(set) var scanPasteFeedback: String?
+    private let scanPasteShortcut = ScanPasteShortcut()
+    private var scanPasteRequest: (peer: String, id: String, target: ScanPasteShortcut.Target?)?
+    @Published private(set) var cameraFeedback: String?
+    @Published private(set) var latestInstantPhoto: ReceivedFile?
+    @Published private(set) var cameraPending = false
+    private var cameraRequest: (peer: String, id: String)?
+    @Published var batteryAlertsEnabled = UserDefaults.standard.bool(forKey: "battery-alerts") {
+        didSet {
+            preferences.set(batteryAlertsEnabled, forKey: "battery-alerts")
+            resetBatteryAlerts()
+        }
+    }
+    @Published var lowBatteryLimit = UserDefaults.standard.object(forKey: "battery-low") as? Int ?? 20 {
+        didSet {
+            preferences.set(lowBatteryLimit, forKey: "battery-low")
+            resetBatteryAlerts()
+        }
+    }
+    @Published var chargedBatteryLimit = UserDefaults.standard.object(forKey: "battery-charged") as? Int ?? 80 {
+        didSet {
+            preferences.set(chargedBatteryLimit, forKey: "battery-charged")
+            resetBatteryAlerts()
+        }
+    }
+    @Published private(set) var batteryMessages: [String: String] = [:]
+    private enum BatteryCondition { case normal, low, charged }
+    private var batteryConditions: [String: BatteryCondition] = [:]
+
     @Published var actionFeedback: String?
+    @Published private(set) var mediaStatuses: [String: Message] = [:]
 
     let clipboard: ClipboardSync
     let adbClipboard = ADBClipboard()
@@ -91,6 +146,11 @@ final class NexusModel: ObservableObject {
     let screen = ScreenMirror()
     let files: FileTransfers
     private let preferences = UserDefaults.standard
+    private let shareService = AndroidShareService()
+    private var presentingShareFailure = false
+    private let shareInbox = ShareInbox.directory
+    private var lastShareDestination: ShareInbox.Destination?
+    private var publishedShareDestination = false
     private var server: LocalServer?
     private var timer: AnyCancellable?
     private var quitObserver: AnyCancellable?
@@ -109,11 +169,15 @@ final class NexusModel: ObservableObject {
         files = FileTransfers(storage: base.appendingPathComponent("Inbox", isDirectory: true)) { peer, message in
             relay.forward?(peer, message)
         }
+        if let saved = preferences.data(forKey: "chat-history"),
+           let history = try? JSONDecoder().decode([ChatEntry].self, from: saved) {
+            messages = history
+        }
         clipboardEnabled = preferences.bool(forKey: "clipboard")
         historyEnabled = preferences.bool(forKey: "history")
         filesEnabled = preferences.bool(forKey: "files")
         notificationsEnabled = preferences.bool(forKey: "notifications")
-        galleryEnabled = preferences.bool(forKey: "gallery")
+        galleryEnabled = preferences.object(forKey: "gallery") as? Bool ?? true
         hideNotices = preferences.object(forKey: "hide-notices") as? Bool ?? true
         quiet = preferences.bool(forKey: "quiet")
         blockedApps = Set(preferences.stringArray(forKey: "blocked-apps") ?? [])
@@ -125,7 +189,11 @@ final class NexusModel: ObservableObject {
         adbClipboard.receive = { [weak self] event in self?.clipboard.receive(event) }
         screen.send = { [weak self] in self?.server?.send($1, to: $0) }
         gallery.send = { [weak self] in self?.server?.send($1, to: $0) }
-        files.didReceive = { [weak self] file in self?.gallery.received(file) }
+        files.didReceive = { [weak self] file in
+            self?.gallery.received(file)
+            self?.receiveInstantPhoto(file)
+            self?.receiveScanPaste(file)
+        }
         files.didFail = { [weak self] id, peer, reason in self?.gallery.transferFailed(id, from: peer, reason: reason) }
         clipboard.forward = { [weak self] text in
             guard let self, let peer = selected, canClipboard(peer.id) else { return }
@@ -160,6 +228,7 @@ final class NexusModel: ObservableObject {
             guard let self else { return }
             self.clipboard.tick(sync: self.clipboardEnabled, imagePeer: self.clipboardImagePeer)
             self.clipboardImages.expire()
+            self.drainShareInbox()
             if let invitation = self.invitation, Int64(time.timeIntervalSince1970) >= invitation.expiresAt {
                 self.invitation = nil
                 self.problem = "O QR expirou. Gere um novo código."
@@ -180,19 +249,69 @@ final class NexusModel: ObservableObject {
     func launch() {
         if quitObserver == nil {
             quitObserver = NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification).sink { [weak self] _ in
+                self?.clearShareDestination()
                 self?.screen.end()
                 self?.screen.stopUSB()
                 self?.adbClipboard.stop()
                 self?.server?.stop()
             }
         }
+        shareService.send = { [weak self] files, text in
+            guard let self else { return "Abra o MasterSync e selecione um Android." }
+            return self.sendSharedContent(files: files, text: text)
+        }
+        shareService.reportFailure = { [weak self] message in
+            // Reply to Finder before presenting the alert in the MasterSync process.
+            Task { @MainActor in self?.showShareFailure(message) }
+        }
+        NSApp.servicesProvider = shareService
+        NSUpdateDynamicServices()
         notifications.activate()
+        if scanPasteEnabled { registerScanPaste() }
         if preferences.bool(forKey: "network-consent") { enableNetwork() }
     }
 
-    func enableNetwork() {
+    private var adbProofResponse: (peer: String, nonce: String)?
+
+    func wirelessControlDevice(for peer: String?) -> ADBWirelessDevice? {
+        guard let peer, let device = adbClipboard.wirelessDevice, device.peerID == peer else { return nil }
+        return device
+    }
+
+    func configureWirelessControl(_ device: ADBWirelessDevice, pairing: ADBPairing?, peer: String) {
+        adbClipboard.configureWireless(device, pairing: pairing, peer: peer) { [weak self] session, serial, peer in
+            guard let self, self.online.contains(peer), self.permissions[peer]?.adbProof == true else {
+                throw NexusError.transfer("Atualize o MasterSync no Android e mantenha o app conectado para verificar o aparelho.")
+            }
+            let nonce = Wire.id()
+            var message = Message("adbProof")
+            message.id = nonce
+            self.server?.send(message, to: peer)
+            for _ in 0..<30 {
+                if self.adbProofResponse?.peer == peer, self.adbProofResponse?.nonce == nonce {
+                    let matches = try await Task.detached { try session.verifyPeer(serial: serial, nonce: nonce) }.value
+                    guard matches, self.online.contains(peer) else {
+                        throw NexusError.transfer("O ADB não confirmou que este é o mesmo Android selecionado no MasterSync.")
+                    }
+                    return
+                }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            throw NexusError.transfer("O MasterSync do Android não respondeu à verificação. Abra o app no celular e tente novamente.")
+        }
+    }
+
+    func startTemporaryNetwork() {
+        guard keychainUnavailable, server == nil else { return }
+        enableNetwork(temporary: true)
+    }
+
+    func enableNetwork() { enableNetwork(temporary: temporaryNetwork) }
+
+    private func enableNetwork(temporary: Bool) {
         guard !connecting, !serviceReady else { return }
         problem = nil
+        keychainUnavailable = false
         otherCopyRunning = otherNexusCopy != nil
         if otherCopyRunning {
             networkProblem = "Outra cópia do Nexus está aberta. Encerre essa cópia com ⌘Q para ativar a rede aqui."
@@ -202,15 +321,20 @@ final class NexusModel: ObservableObject {
         connecting = true
         do {
             if server == nil {
-                let server = try LocalServer()
+                let server = try temporary ? LocalServer.temporary() : LocalServer()
+                temporaryNetwork = temporary
                 server.onUpdate = { [weak self] in self?.refresh() }
                 server.onSession = { [weak self] peer in self?.resetSession(peer) }
                 server.onMessage = { [weak self] peer, message in self?.receive(message, peer: peer) }
                 self.server = server
             }
-            preferences.set(true, forKey: "network-consent")
+            if !temporaryNetwork { preferences.set(true, forKey: "network-consent") }
             server?.start()
             refresh()
+        } catch NexusError.security(-60008) {
+            connecting = false
+            keychainUnavailable = true
+            problem = "O macOS não autorizou o acesso à identidade de pareamento no Keychain."
         } catch {
             connecting = false
             problem = error.localizedDescription
@@ -263,9 +387,55 @@ final class NexusModel: ObservableObject {
             try server?.revoke(peer.id)
             files.disconnect(peer.id, discardOutgoing: true)
             notifications.removePeer(peer.id)
+            notifications.clearDnd(peer.id)
             if selectedID == peer.id { selectedID = nil }
             addEvent("\(peer.name) removido", "iphone.slash")
         } catch { problem = error.localizedDescription }
+    }
+
+    var canChat: Bool {
+        active && selected.map { permissions[$0.id]?.chat == true } == true
+    }
+
+    @discardableResult
+    func sendChat(_ draft: String) -> Bool {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard canChat, let peer = selected?.id, !text.isEmpty, text.utf8.count <= 2048 else { return false }
+        let id = Wire.id()
+        saveMessage(ChatEntry(id: id, peer: peer, text: text, outgoing: true, date: .now, confirmed: false))
+        var message = Message("chat")
+        message.id = id
+        message.text = text
+        server?.send(message, to: peer)
+        return true
+    }
+
+    private func saveMessage(_ entry: ChatEntry) {
+        messages.append(entry)
+        if messages.count > 400 { messages.removeFirst(messages.count - 400) }
+        persistMessages()
+    }
+
+    private func persistMessages() {
+        if let data = try? JSONEncoder().encode(messages) { preferences.set(data, forKey: "chat-history") }
+    }
+
+    private func receiveChat(_ message: Message, peer: String) {
+        guard online.contains(peer), permissions[peer]?.chat == true,
+              let id = message.id, Wire.validID(id) else { return }
+        if message.type == "chatAck" {
+            if let index = messages.firstIndex(where: { $0.peer == peer && $0.id == id && $0.outgoing }) {
+                messages[index].confirmed = true
+                persistMessages()
+            }
+        } else if let text = message.text, !text.isEmpty, text.utf8.count <= 2048 {
+            if !messages.contains(where: { $0.peer == peer && $0.id == id }) {
+                saveMessage(ChatEntry(id: id, peer: peer, text: text, outgoing: false, date: .now, confirmed: true))
+            }
+            var reply = Message("chatAck")
+            reply.id = id
+            server?.send(reply, to: peer)
+        }
     }
 
     func sendFile(_ url: URL) {
@@ -273,8 +443,110 @@ final class NexusModel: ObservableObject {
         files.offer(url, to: peer.id)
     }
 
+    private func showShareFailure(_ message: String) {
+        guard !presentingShareFailure else { return }
+        presentingShareFailure = true
+        defer { presentingShareFailure = false }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Não foi possível enviar ao Android"
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
+    private func sendSharedContent(files urls: [URL], text: String?) -> String? {
+        guard let selected else { return "Pareie um celular em Celular → Conectar Android antes de enviar." }
+        guard active else {
+            return "\(selected.name) está desconectado. Abra o MasterSync no Android e conecte-o na mesma rede Wi-Fi."
+        }
+        let peer = selected.id
+        let message = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !urls.isEmpty, !canSendFiles { return "Ative Arquivos nos dois aparelhos para enviar." }
+        if !message.isEmpty && (!canChat || message.utf8.count > 2048) {
+            return "Para enviar este texto, ative a Conversa e use até 2.048 bytes."
+        }
+        guard !urls.isEmpty || !message.isEmpty else { return "Selecione um arquivo, link ou texto para enviar." }
+        if !urls.isEmpty, !files.offerBatch(urls, to: peer) { return "Não foi possível colocar o arquivo na fila." }
+        if !message.isEmpty, !sendChat(message) { return "Não foi possível enviar o texto." }
+        return nil
+    }
+
+    private func clearShareDestination() {
+        if let shareInbox {
+            try? FileManager.default.removeItem(at: shareInbox.appendingPathComponent("destination.json"))
+        }
+    }
+
+    private func drainShareInbox() {
+        guard let shareInbox else { return }
+        let manager = FileManager.default
+        let destination = active && (canChat || canSendFiles) ? selected.map {
+            ShareInbox.Destination(peer: $0.id, name: $0.name)
+        } : nil
+        if !publishedShareDestination || lastShareDestination != destination {
+            do {
+                if let destination {
+                    try manager.createDirectory(at: shareInbox, withIntermediateDirectories: true)
+                    try JSONEncoder().encode(destination)
+                        .write(to: shareInbox.appendingPathComponent("destination.json"), options: .atomic)
+                } else { clearShareDestination() }
+                lastShareDestination = destination
+                publishedShareDestination = true
+            } catch { return }
+        }
+        guard let destination else { return }
+        for pending in ShareInbox.children(of: shareInbox) where UUID(uuidString: pending.lastPathComponent) != nil {
+            guard let data = try? Data(contentsOf: pending.appendingPathComponent("request.json")),
+                  let request = try? JSONDecoder().decode(ShareInbox.Request.self, from: data),
+                  request.peer == destination.peer, request.text.count <= 11 else { continue }
+            let message = request.text.joined(separator: "\n")
+            let urls = ShareInbox.items(in: pending)
+            guard (urls.isEmpty || canSendFiles), (message.isEmpty || canChat) else { continue }
+            if message.utf8.count > 2048 {
+                try? manager.removeItem(at: pending)
+                problem = "O texto compartilhado excede o tamanho máximo da Conversa."
+                continue
+            }
+            do {
+                if urls.isEmpty {
+                    if sendSharedContent(files: [], text: message) == nil { try manager.removeItem(at: pending) }
+                } else {
+                    let support = try manager.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                  appropriateFor: nil, create: true)
+                    let outbox = support.appendingPathComponent("Nexus masterSync/Shared Files", isDirectory: true)
+                    try manager.createDirectory(at: outbox, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+                    let retained = outbox.appendingPathComponent(pending.lastPathComponent)
+                    // Keep the payload available for queued delivery and opening sent attachments in the conversation.
+                    try manager.moveItem(at: pending, to: retained)
+                    if let error = sendSharedContent(files: ShareInbox.items(in: retained), text: message) {
+                        try manager.moveItem(at: retained, to: pending)
+                        problem = error
+                    }
+                }
+            } catch { problem = error.localizedDescription }
+        }
+    }
+
+    func sendDroppedFiles(_ urls: [URL]) -> Bool {
+        guard canSendFiles, let peer = selected?.id, files.offerBatch(urls, to: peer) else { return false }
+        section = .conversation
+        return true
+    }
+
     func findPhone() {
         if canFindPhone, let peer = selected { server?.send(Message("ringPhone"), to: peer.id) }
+    }
+
+    var currentMedia: Message? {
+        guard canPlayMedia, let peer = selected?.id else { return nil }
+        return mediaStatuses[peer]
+    }
+
+    func refreshMedia() {
+        if canPlayMedia, let peer = selected { server?.send(Message("mediaStatusRequest"), to: peer.id) }
     }
 
     func mediaControl(_ command: String) {
@@ -284,8 +556,105 @@ final class NexusModel: ObservableObject {
         server?.send(message, to: peer.id)
     }
 
+    @Published private(set) var launcherLists: [String: [AndroidApp]] = [:]
+
+    var launcherAvailable: Bool {
+        active && selected.map { permissions[$0.id]?.launcher == true } == true
+    }
+
+    func refreshLauncher() {
+        guard launcherAvailable, let peer = selected?.id else { return }
+        server?.send(Message("launcherAppsRequest"), to: peer)
+    }
+
+    func launchAndroidApp(_ app: AndroidApp) {
+        guard canMirror, let peer = selected?.id, let target = wirelessControlDevice(for: peer),
+              launcherLists[peer]?.contains(where: { $0.id == app.id }) == true else { return }
+        screen.beginControl(peer, wireless: target, open: app)
+    }
+
     func requestMirror() {
         if canMirror, let peer = selected { screen.begin(peer.id) }
+    }
+
+    var canRequestPhoto: Bool {
+        canSendFiles && selected.map { permissions[$0.id]?.instantCamera == true } == true
+    }
+
+    func requestInstantPhoto() {
+        guard canRequestPhoto, !cameraPending, let peer = selected?.id else { return }
+        let id = Wire.id()
+        cameraRequest = (peer, id)
+        cameraPending = true
+        cameraFeedback = "Abra o MasterSync e confirme a câmera no Android."
+        var message = Message("cameraRequest")
+        message.id = id
+        server?.send(message, to: peer)
+        Task {
+            try? await Task.sleep(for: .seconds(120))
+            if cameraRequest?.id == id {
+                cameraPending = false
+                cameraFeedback = "A foto ainda não chegou. Você pode solicitar outra."
+            }
+        }
+    }
+
+    private func receiveInstantPhoto(_ file: ReceivedFile) {
+        guard file.peerID == cameraRequest?.peer, file.offer.id == cameraRequest?.id,
+              file.offer.mime == "image/jpeg" else { return }
+        cameraRequest = nil
+        cameraPending = false
+        cameraFeedback = "Foto salva no Mac."
+        latestInstantPhoto = file
+    }
+
+    private func registerScanPaste() {
+        scanPasteShortcut.action = { [weak self] in self?.requestScanPaste() }
+        if !scanPasteShortcut.register() {
+            scanPasteFeedback = "O atalho \(ScanPasteShortcut.label) está indisponível. Confira se outro app o usa."
+        }
+    }
+
+    func requestScanPaste() {
+        guard scanPasteEnabled, scanPasteRequest == nil else { return }
+        guard canRequestScan, let peer = selected?.id, permissions[peer]?.scanPaste == true else {
+            scanPasteFeedback = "Para usar o atalho, atualize o Android e autorize a digitalização e os arquivos."
+            return
+        }
+        let id = Wire.id()
+        scanPasteRequest = (peer, id, ScanPasteShortcut.Target())
+        scanPasteFeedback = "Confirme a digitalização no Android."
+        var message = Message("scanRequest")
+        message.id = id
+        server?.send(message, to: peer)
+        Task {
+            try? await Task.sleep(for: .seconds(180))
+            if scanPasteRequest?.id == id {
+                scanPasteRequest = nil
+                scanPasteFeedback = "O atalho expirou. A digitalização ainda pode chegar em Documentos."
+            }
+        }
+    }
+
+    private func receiveScanPaste(_ file: ReceivedFile) {
+        guard let request = scanPasteRequest, request.peer == file.peerID, request.id == file.offer.id,
+              file.offer.isScanPage else { return }
+        scanPasteRequest = nil
+        Task {
+            let bytes = await Task.detached(priority: .utility) {
+                guard file.offer.size <= 64 * 1024 * 1024 else { return nil as Data? }
+                return try? Data(contentsOf: file.url)
+            }.value
+            guard scanPasteEnabled, let bytes, clipboard.applyImage(bytes, mime: "image/jpeg") else {
+                if scanPasteEnabled { scanPasteFeedback = "A imagem está em Documentos, mas não foi possível copiá-la." }
+                return
+            }
+            if request.target?.pasteIfStillFocused() == true {
+                scanPasteFeedback = "Imagem copiada e enviada ao campo original."
+            } else {
+                scanPasteFeedback = "Imagem copiada. Use Command + V no campo desejado."
+            }
+        }
     }
 
     func requestScan() {
@@ -304,6 +673,36 @@ final class NexusModel: ObservableObject {
         if !notificationsEnabled { notifications.removeAll() }
     }
 
+    private func resetBatteryAlerts() {
+        batteryConditions.removeAll()
+        batteryMessages.removeAll()
+        evaluateBatteryAlerts()
+    }
+
+    private func evaluateBatteryAlerts() {
+        guard batteryAlertsEnabled else { return }
+        for peer in peers where online.contains(peer.id) {
+            guard let status = deviceStatus[peer.id], let percent = status.battery else { continue }
+            let condition: BatteryCondition
+            if status.charging {
+                condition = percent >= chargedBatteryLimit ? .charged : .normal
+            } else {
+                condition = percent <= lowBatteryLimit ? .low : .normal
+            }
+            // Repeated packets and reconnection with the same battery state share the same alert.
+            guard batteryConditions[peer.id] != condition else { continue }
+            batteryConditions[peer.id] = condition
+            guard condition != .normal else {
+                batteryMessages[peer.id] = nil
+                continue
+            }
+            let title = condition == .low ? "Bateria baixa" : "Limite de carga atingido"
+            let detail = "\(peer.name) está com \(percent)% de bateria."
+            batteryMessages[peer.id] = "\(title) · \(percent)%"
+            notifications.postBatteryAlert(title: title, detail: detail, peer: peer.id)
+        }
+    }
+
     private func refresh() {
         guard let server else { return }
         peers = server.peers
@@ -315,11 +714,14 @@ final class NexusModel: ObservableObject {
         let newlyOnline = server.online.subtracting(online)
         let disconnected = online.subtracting(server.online)
         online = server.online
+        evaluateBatteryAlerts()
         for id in disconnected {
             permissions[id] = nil
+            mediaStatuses[id] = nil
             screen.disconnect(id)
             files.disconnect(id)
             notifications.removePeer(id)
+            notifications.clearDnd(id)
             if let peer = peers.first(where: { $0.id == id }) { addEvent("\(peer.name) desconectado", "wifi.slash") }
         }
         for id in newlyOnline {
@@ -330,6 +732,8 @@ final class NexusModel: ObservableObject {
 
     private func resetSession(_ peer: String) {
         permissions[peer] = nil
+        notifications.removePeer(peer)
+        notifications.clearDnd(peer)
         updateClipboardImages()
         screen.disconnect(peer)
         updateGallery()
@@ -340,11 +744,27 @@ final class NexusModel: ObservableObject {
     private func receive(_ message: Message, peer: String) {
         switch message.type {
         case "capabilities":
+            let shouldRefresh = message.noticeSync == true &&
+                (permissions[peer]?.noticeSync != true ||
+                    (message.notifications == true && permissions[peer]?.notifications != true))
             permissions[peer] = message
+            if shouldRefresh { server?.send(Message("noticeRefresh"), to: peer) }
             updateClipboardImages()
             if message.notifications != true { notifications.removePeer(peer) }
+            if message.noticeSync != true { notifications.clearDnd(peer) }
             updateFilePermission(peer)
             updateGallery()
+        case "launcherApps":
+            if permissions[peer]?.launcher == true, let apps = message.launcherApps {
+                var seen = Set<String>()
+                launcherLists[peer] = apps.prefix(200).filter { $0.validComponent && seen.insert($0.id).inserted }
+                    .sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending }
+            }
+        case "adbProofReady":
+            if online.contains(peer), let nonce = message.id, Wire.validID(nonce) {
+                adbProofResponse = (peer, nonce)
+            }
+        case "chat", "chatAck": receiveChat(message, peer: peer)
         case "clipboard":
             guard canClipboard(peer), message.sensitive != true else { return }
             clipboardImages.cancelIncoming()
@@ -354,11 +774,28 @@ final class NexusModel: ObservableObject {
             if peer == clipboardImagePeer && canClipboard(peer) && message.sensitive != true {
                 clipboardImages.receive(message)
             }
-        case "notice", "noticeRemoved":
+        case "dndState":
+            if permissions[peer]?.noticeSync == true { notifications.handle(message, peer: peer) }
+        case "notice", "noticeRemoved", "noticeSnapshot", "noticeDismissFailed":
             if permissions[peer]?.notifications == true { notifications.handle(message, peer: peer) }
+        case "mediaStatus":
+            if permissions[peer]?.mediaControl == true { mediaStatuses[peer] = message }
         case "actionStatus":
             actionFeedback = Wire.visible(message.message ?? "", limit: 130)
+        case "cameraStatus":
+            if peer == cameraRequest?.peer, message.id == cameraRequest?.id {
+                cameraFeedback = Wire.visible(message.message ?? "", limit: 140)
+                if message.more != true {
+                    cameraRequest = nil
+                    cameraPending = false
+                }
+            }
         case "scanStatus":
+            if peer == scanPasteRequest?.peer, message.id == scanPasteRequest?.id {
+                scanPasteFeedback = Wire.visible(message.message ?? "", limit: 130)
+                if message.more != true { scanPasteRequest = nil }
+                return
+            }
             scanRequestFeedback = Wire.visible(message.message ?? "", limit: 130)
         case let type where type.hasPrefix("screen"):
             screen.receive(message, from: peer)
@@ -383,12 +820,33 @@ final class NexusModel: ObservableObject {
         }
     }
 
+    var androidDnd: Message? { selected.flatMap { notifications.dnd[$0.id] } }
+
+    func setAndroidDnd(_ enabled: Bool) {
+        guard let peer = selected?.id, online.contains(peer), androidDnd?.dndAllowed == true else { return }
+        var message = Message("dndSet")
+        message.dndEnabled = enabled
+        server?.send(message, to: peer)
+    }
+
+    func refreshNotices() {
+        for peer in online where permissions[peer]?.noticeSync == true {
+            server?.send(Message("noticeRefresh"), to: peer)
+        }
+    }
+
+    var canRefreshNotices: Bool {
+        active && selected.flatMap { permissions[$0.id]?.noticeSync } == true
+    }
+
     private func sendCapabilities(_ peer: String) {
         var state = Message("capabilities")
         state.clipboard = clipboardEnabled && selected?.id == peer
         state.clipboardImages = state.clipboard
+        state.chat = true
         state.files = filesEnabled
         state.notifications = notificationsEnabled
+        state.noticeSync = true
         state.gallery = galleryEnabled && selected?.id == peer
         server?.send(state, to: peer)
     }

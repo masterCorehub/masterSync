@@ -25,6 +25,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
@@ -56,21 +57,107 @@ class NexusController(val context: Context) {
     )
 
     data class Permissions(val clipboard: Boolean = false, val files: Boolean = false, val notifications: Boolean = false,
-        val gallery: Boolean = false, val clipboardImages: Boolean = false)
+        val gallery: Boolean = false, val clipboardImages: Boolean = false, val chat: Boolean = false)
+    data class CameraRequest(val peer: String, val id: String)
     data class MirrorRequest(val peer: String, val id: String, val size: Int, val fps: Int, val quality: Int)
     private data class Battery(val level: Int?, val charging: Boolean)
 
     private val storage = context.getSharedPreferences("integration-v1", Context.MODE_PRIVATE)
+    data class ChatEntry(val peer: String, val id: String, val text: String, val outgoing: Boolean, val confirmed: Boolean,
+                         val time: Long = 0) {
+        fun toJson(): JSONObject = JSONObject().put("peer", peer).put("id", id).put("text", text)
+            .put("outgoing", outgoing).put("confirmed", confirmed).put("time", time)
+
+        companion object {
+            fun fromJson(item: JSONObject) = ChatEntry(item.getString("peer"), item.getString("id"), item.getString("text"),
+                item.getBoolean("outgoing"), item.getBoolean("confirmed"), item.optLong("time", 0))
+        }
+    }
+    private val chatHistory = MutableStateFlow(readChat())
+    val messages = chatHistory.asStateFlow()
+
+    private fun readChat(): List<ChatEntry> = runCatching {
+        val array = JSONArray(storage.getString("chat-history", "[]"))
+        List(array.length()) { index -> ChatEntry.fromJson(array.getJSONObject(index)) }
+    }.getOrDefault(emptyList())
+
+    private fun saveChat(entries: List<ChatEntry>) {
+        val recent = entries.takeLast(400)
+        val json = JSONArray()
+        recent.forEach { item -> json.put(item.toJson()) }
+        storage.edit().putString("chat-history", json.toString()).apply()
+        chatHistory.value = recent
+    }
+
+    fun sendChat(draft: String): Boolean {
+        val peer = client.status.value.connected?.id ?: return false
+        val text = draft.trim()
+        if (!permissions.value.chat || text.isEmpty() || text.toByteArray().size > 2048) return false
+        val id = Wire.id()
+        if (!client.sendTo(peer, Wire.message("chat").put("id", id).put("text", text))) return false
+        saveChat(chatHistory.value + ChatEntry(peer, id, text, true, false, System.currentTimeMillis()))
+        return true
+    }
+
+    private fun receiveChat(peer: String, message: JSONObject) {
+        val id = message.optString("id")
+        if (!permissions.value.chat || !Wire.validID(id)) return
+        if (message.optString("type") == "chatAck") {
+            saveChat(chatHistory.value.map { item ->
+                if (item.peer == peer && item.id == id && item.outgoing) item.copy(confirmed = true) else item
+            })
+        } else {
+            val text = message.optString("text")
+            if (text.isEmpty() || text.toByteArray().size > 2048) return
+            if (chatHistory.value.none { it.peer == peer && it.id == id }) {
+                saveChat(chatHistory.value + ChatEntry(peer, id, text, false, true, System.currentTimeMillis()))
+            }
+            client.sendTo(peer, Wire.message("chatAck").put("id", id))
+        }
+    }
+
     private val settings = MutableStateFlow(readOptions())
     val options = settings.asStateFlow()
     private val remote = MutableStateFlow(Permissions())
     val permissions = remote.asStateFlow()
     private val noticeApps = MutableStateFlow<Map<String, String>>(emptyMap())
     val apps = noticeApps.asStateFlow()
+    var backgroundRequested = storage.getBoolean("connection-in-background", true)
+        private set
+    private var backgroundStarting = false
     private val keepConnected = MutableStateFlow(false)
     val background = keepConnected.asStateFlow()
-    private val scanRequest = MutableStateFlow<String?>(null)
+    data class ScanRequest(val peer: String, val id: String?)
+    private val scanRequest = MutableStateFlow<ScanRequest?>(null)
     val pendingScan = scanRequest.asStateFlow()
+    private val photoRequest = MutableStateFlow<CameraRequest?>(null)
+    val pendingPhoto = photoRequest.asStateFlow()
+    private var capturingPhoto: CameraRequest? = null
+
+    fun decidePhoto(allow: Boolean): CameraRequest? {
+        val request = photoRequest.value ?: return null
+        photoRequest.value = null
+        if (!allow || !options.value.remoteScan || !options.value.files || !permissions.value.files ||
+            client.status.value.connected?.id != request.peer) {
+            photoStatus(request, "Pedido de foto recusado.")
+            return null
+        }
+        capturingPhoto = request
+        updateLifecycle()
+        photoStatus(request, "Aguardando a foto no Android…", finished = false)
+        return request
+    }
+
+    fun finishPhoto(request: CameraRequest) {
+        if (capturingPhoto == request) capturingPhoto = null
+        updateLifecycle()
+    }
+
+    fun photoStatus(request: CameraRequest, text: String, finished: Boolean = true) {
+        client.sendTo(request.peer, Wire.message("cameraStatus").put("id", request.id)
+            .put("message", text.take(130)).put("more", !finished))
+    }
+
     private val mirrorRequest = MutableStateFlow<MirrorRequest?>(null)
     val pendingMirror = mirrorRequest.asStateFlow()
     private var approvedMirror: String? = null
@@ -84,8 +171,18 @@ class NexusController(val context: Context) {
     private val main = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private var foreground = false
     private var lastPeer: String? = null
+    private var adbProof: Pair<String, Long>? = null
+
+    fun verifyAdbProof(candidate: String): Boolean {
+        val proof = adbProof ?: return false
+        if (proof.first != candidate || android.os.SystemClock.elapsedRealtime() > proof.second) return false
+        adbProof = null
+        return true
+    }
     private val actions = DeviceActions(context)
     private var battery = Battery(null, false)
+    var supportsNoticeSync = false
+        private set
     var listener: NotificationRelay? = null
 
     val client = LocalClient(context) { peer, message -> main.launch { receive(peer, message) } }
@@ -114,10 +211,14 @@ class NexusController(val context: Context) {
                 val id = status.connected?.id
                 if (lastPeer != id) {
                     lastPeer = id
+                    adbProof = null
                     remote.value = Permissions()
+                    supportsNoticeSync = false
                     actions.stop()
                     clipboard.targetChanged()
                     scanRequest.value = null
+                    photoRequest.value = null
+                    capturingPhoto = null
                     mirrorRequest.value = null
                     approvedMirror = null
                     if (screenService != null) stopMirror()
@@ -136,7 +237,25 @@ class NexusController(val context: Context) {
         updateLifecycle()
     }
 
+    fun requestBackgroundConnection(enabled: Boolean) {
+        if (backgroundRequested == enabled) return
+        backgroundRequested = enabled
+        storage.edit().putBoolean("connection-in-background", enabled).apply()
+        if (!enabled) {
+            backgroundStarting = false
+            setBackground(false)
+        }
+    }
+
+    fun beginBackgroundStart(): Boolean {
+        if (!backgroundRequested || keepConnected.value || backgroundStarting) return false
+        // Avoid suspending the socket while Android starts the foreground service.
+        backgroundStarting = true
+        return true
+    }
+
     fun setBackground(active: Boolean) {
+        backgroundStarting = false
         keepConnected.value = active
         updateLifecycle()
         advertise()
@@ -145,11 +264,12 @@ class NexusController(val context: Context) {
     fun refreshPermissions() {
         clipboard.refreshKeyboard()
         advertise()
+        listener?.refresh()
         updateTransfers()
     }
 
     private fun updateLifecycle() {
-        if (foreground || keepConnected.value || activeMirror.value || approvedMirror != null) client.start()
+        if (foreground || backgroundStarting || keepConnected.value || activeMirror.value || approvedMirror != null || capturingPhoto != null) client.start()
         else client.suspendConnection()
     }
 
@@ -190,7 +310,7 @@ class NexusController(val context: Context) {
     fun scanDestination(authorizedPeer: String?): String? = authorizedPeer ?: client.selectedAuthorizedMac()
         .takeIf { options.value.autoScan && options.value.files }
 
-    suspend fun saveScan(pdf: Uri?, pages: List<Uri>, destination: String?, capture: File? = null): ScanLibrary.Document {
+    suspend fun saveScan(pdf: Uri?, pages: List<Uri>, destination: String?, capture: File? = null, requestID: String? = null): ScanLibrary.Document {
         // Saving and queuing can finish if the activity is recreated during a scan.
         return main.async {
             val document = try { scans.save(pdf, pages) } finally { capture?.delete() }
@@ -201,7 +321,8 @@ class NexusController(val context: Context) {
                 val failure: (String) -> Unit = { note("Digitalização salva no Android. $it") }
                 document.pages.forEachIndexed { index, file ->
                     transfers.offerFile(file, destination, scans.name(document, page = index + 1), "image/jpeg",
-                        scanPage = true, onFailure = failure)
+                        scanPage = true, transferId = if (index == 0 && requestID != null) requestID else Wire.id(),
+                        onFailure = failure)
                 }
                 transfers.offerFile(document.pdf, destination, scans.name(document), "application/pdf", onFailure = failure)
             } else note(if (options.value.autoScan || destination != null)
@@ -231,13 +352,17 @@ class NexusController(val context: Context) {
 
     fun canPostNotifications(): Boolean = context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
 
-    fun decideScan(allow: Boolean): String? {
-        val peer = scanRequest.value ?: return null
+    fun decideScan(allow: Boolean): ScanRequest? {
+        val request = scanRequest.value ?: return null
         scanRequest.value = null
-        val connected = client.status.value.connected?.id == peer
-        if (connected) client.send(Wire.message("scanStatus").put("message",
-            if (allow) "Scanner autorizado no Android." else "Solicitação recusada no Android."))
-        return peer.takeIf { connected && allow }
+        val connected = client.status.value.connected?.id == request.peer
+        if (connected) {
+            val status = Wire.message("scanStatus").put("message",
+                if (allow) "Scanner autorizado no Android." else "Solicitação recusada no Android.")
+            request.id?.let { status.put("id", it).put("more", allow) }
+            client.sendTo(request.peer, status)
+        }
+        return request.takeIf { connected && allow }
     }
 
     fun decideMirror(allow: Boolean): MirrorRequest? {
@@ -273,24 +398,54 @@ class NexusController(val context: Context) {
         if (client.status.value.connected?.id != peer) return
         when (val type = message.optString("type")) {
             "capabilities" -> {
+                val noticeSyncChanged = supportsNoticeSync != message.optBoolean("noticeSync")
+                supportsNoticeSync = message.optBoolean("noticeSync")
                 val state = Permissions(message.optBoolean("clipboard"), message.optBoolean("files"),
-                    message.optBoolean("notifications"), message.optBoolean("gallery"), message.optBoolean("clipboardImages"))
+                    message.optBoolean("notifications"), message.optBoolean("gallery"), message.optBoolean("clipboardImages"), message.optBoolean("chat"))
+                val notificationsChanged = state.notifications != remote.value.notifications
                 if (state != remote.value) {
                     remote.value = state
                     clipboard.targetChanged()
                     updateTransfers()
-                    listener?.refresh()
                 }
+                if (noticeSyncChanged || notificationsChanged) listener?.refresh()
             }
+            "launcherAppsRequest" -> {
+                val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                val manager = context.packageManager
+                val apps = JSONArray()
+                // Only launcher activities are eligible, including third-party apps visible to the user.
+                manager.queryIntentActivities(intent, 0).distinctBy { it.activityInfo.packageName }
+                    .take(200).forEach { entry ->
+                        val activity = entry.activityInfo
+                        apps.put(JSONObject()
+                            .put("component", "${activity.packageName}/${activity.name}")
+                            .put("label", entry.loadLabel(manager).toString().take(70)))
+                    }
+                client.sendTo(peer, Wire.message("launcherApps").put("launcherApps", apps))
+            }
+            "adbProof" -> {
+                val nonce = message.optString("id")
+                if (!Wire.validID(nonce)) return
+                adbProof = nonce to (android.os.SystemClock.elapsedRealtime() + 12_000)
+                client.sendTo(peer, Wire.message("adbProofReady").put("id", nonce))
+            }
+            "chat", "chatAck" -> receiveChat(peer, message)
             "clipboard", "clipboardImageOffer", "clipboardImageAck", "clipboardImagePart", "clipboardImageDone" ->
                 clipboard.receive(peer, message)
+            "noticeRefresh" -> listener?.refresh()
+            "dndSet" -> if (supportsNoticeSync && message.has("dndEnabled")) listener?.receive(message)
             "noticeReply", "noticeDismiss" -> if (canMirrorNotices()) listener?.receive(message)
             "ringPhone" -> if (options.value.findPhone) {
                 client.sendTo(peer, Wire.message("actionStatus").put("message", actions.ring()))
             }
+            "mediaStatusRequest" -> if (options.value.mediaControl) {
+                listener?.mediaStatus()?.let { client.sendTo(peer, it) }
+            }
             "mediaCommand" -> if (options.value.mediaControl) {
                 listener?.media(message.optString("message"))?.let { result ->
                     client.sendTo(peer, Wire.message("actionStatus").put("message", result))
+                    listener?.mediaStatus()?.let { client.sendTo(peer, it) }
                 }
             }
             "screenRequest" -> {
@@ -308,9 +463,21 @@ class NexusController(val context: Context) {
                 if (activeMirror.value) stopMirror()
                 else updateLifecycle()
             }
+            "cameraRequest" -> {
+                val id = message.optString("id")
+                if (!options.value.remoteScan || !options.value.files || !permissions.value.files || !Wire.validID(id)) return
+                val request = CameraRequest(peer, id)
+                if (photoRequest.value != null || capturingPhoto != null) {
+                    photoStatus(request, "Já existe uma solicitação de câmera no celular.")
+                    return
+                }
+                photoRequest.value = request
+                if (!foreground && canPostNotifications()) RequestNotifications.notifyPhoto(context)
+            }
             "scanRequest" -> {
                 if (!options.value.remoteScan || !options.value.files || !permissions.value.files) return
-                scanRequest.value = peer
+                if (scanRequest.value != null) return
+                scanRequest.value = ScanRequest(peer, message.optString("id").takeIf(Wire::validID))
                 if (!foreground && canPostNotifications()) RequestNotifications.notifyScan(context)
             }
             else -> when {
@@ -323,10 +490,10 @@ class NexusController(val context: Context) {
     private fun advertise() {
         val local = options.value
         client.send(Wire.message("capabilities").put("clipboard", local.clipboard).put("files", local.files)
-            .put("notifications", local.notificationMirror && listener != null)
-            .put("scanner", local.remoteScan && local.files).put("gallery", local.gallery && gallery.available()).put("mirror", local.mirror)
+            .put("notifications", local.notificationMirror && listener != null).put("noticeSync", listener != null)
+            .put("instantCamera", local.remoteScan && local.files).put("scanPaste", local.remoteScan && local.files).put("scanner", local.remoteScan && local.files).put("gallery", local.gallery && gallery.available()).put("mirror", local.mirror)
             .put("galleryRevision", 2).put("backgroundConnection", keepConnected.value).put("clipboardImages", local.clipboard)
-            .put("findPhone", local.findPhone).put("mediaControl", local.mediaControl && listener != null))
+            .put("launcher", true).put("adbProof", true).put("chat", true).put("findPhone", local.findPhone).put("mediaControl", local.mediaControl && listener != null))
     }
 
     private fun updateTransfers() {

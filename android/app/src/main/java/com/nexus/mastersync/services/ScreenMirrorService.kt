@@ -43,6 +43,8 @@ class ScreenMirrorService : Service() {
     private var pendingID: String? = null
     private var lastFrame = 0L
     private var peer: String? = null
+    private var capturedWidth = 0
+    private var capturedHeight = 0
     private var longestEdge = 768
     private var fps = 10
     private var quality = 68
@@ -130,6 +132,8 @@ class ScreenMirrorService : Service() {
         val scale = (longestEdge.toDouble() / maxOf(width, height)).coerceAtMost(1.0)
         val w = (width * scale).roundToInt().coerceAtLeast(2)
         val h = (height * scale).roundToInt().coerceAtLeast(2)
+        capturedWidth = width
+        capturedHeight = height
         if (reader?.width == w && reader?.height == h) return
         val next = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
         val density = resources.displayMetrics.densityDpi
@@ -192,6 +196,7 @@ class ScreenMirrorService : Service() {
             if (output.size() > 84_000) return
             val id = Wire.id()
             if (nexus.client.sendTo(device, Wire.message("screenFrame").put("id", id)
+                .put("screenWidth", capturedWidth).put("screenHeight", capturedHeight)
                 .put("data", Wire.encode(output.toByteArray())))) pendingID = id
         } finally {
             if (visible !== padded) visible.recycle()

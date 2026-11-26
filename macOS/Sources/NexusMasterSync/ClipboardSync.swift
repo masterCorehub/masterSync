@@ -86,12 +86,14 @@ final class ClipboardSync: ObservableObject {
         changeCount = board.changeCount
     }
 
-    func applyImage(_ bytes: Data, mime: String) {
+    @discardableResult
+    func applyImage(_ bytes: Data, mime: String) -> Bool {
         guard let type = UTType(mimeType: mime), let source = Self.safeImage(bytes),
-              CGImageSourceGetType(source) as String? == type.identifier else { return }
+              CGImageSourceGetType(source) as String? == type.identifier else { return false }
         board.clearContents()
-        board.setData(bytes, forType: NSPasteboard.PasteboardType(type.identifier))
+        let copied = board.setData(bytes, forType: NSPasteboard.PasteboardType(type.identifier))
         changeCount = board.changeCount
+        return copied
     }
 
     private nonisolated static func imageForSending(_ bytes: Data, type: UTType) -> (Data, String)? {

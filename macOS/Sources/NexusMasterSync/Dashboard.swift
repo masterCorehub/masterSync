@@ -1,7 +1,9 @@
 import AppKit
+import ApplicationServices
 import CoreImage.CIFilterBuiltins
 import NexusCore
 import Quartz
+import QuickLookThumbnailing
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -10,8 +12,26 @@ struct Dashboard: View {
     @Environment(\.calendar) private var calendar
     @Environment(\.colorScheme) private var scheme
     @Environment(\.openWindow) private var openWindow
+    @State private var pendingScanDeletion: ReceivedFile?
     @State private var imported = false
-    @State private var usbConfirm = false
+    @State private var targetingPhoneDrop = false
+    @State private var showingLauncher = false
+    @State private var launcherSearch = ""
+    @AppStorage("android-launcher-pins") private var storedLauncherPins = Data()
+    @State private var chatDraft = ""
+    @State private var showNotices = false
+    @State private var connectionGuide = false
+    @State private var confirmTemporaryConnection = false
+    @State private var guidePeer: String?
+    @State private var installingWiFiTools = false
+    @State private var wifiToolsMessage: String?
+    @State private var testingGuideControl = false
+    @State private var testingGuideAudio = false
+    @State private var guideControlConfirmed = false
+    @State private var guideAudioConfirmed = false
+    @AppStorage("seen-connection-guide") private var seenConnectionGuide = false
+    @AppStorage("network-consent") private var networkConsent = false
+    @State private var volume: Double?
     @State private var wirelessClipboardSetup = false
     @State private var clipboardClear = false
     @State private var revokePeer: Peer?
@@ -25,38 +45,61 @@ struct Dashboard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            DashboardHeader(model: model, gallery: model.gallery)
+            DashboardHeader(model: model, gallery: model.gallery, notificationButton: AnyView(notificationButton))
                 .padding(.horizontal, 28)
                 .padding(.top, 30)
                 .padding(.bottom, 18)
 
-            dashboardContent
+            if model.section == .conversation {
+                conversationPanel
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 22)
+                    .onChange(of: model.selected?.id) { _, _ in chatDraft = "" }
+                    .onChange(of: latestScanPage?.id) { _, page in
+                        if page != nil { model.section = .documents }
+                    }
+            } else {
+                dashboardContent
+            }
 
-            // Connection controls stay in reach while the current section scrolls.
-            ConnectionBar(model: model) { imported = true }
-                .padding(.horizontal, 23).padding(.top, 12).padding(.bottom, 19)
+            if model.section == .devices {
+                ConnectionBar(model: model) { imported = true }
+                    .padding(.horizontal, 23).padding(.top, 12).padding(.bottom, 19)
+            }
         }
         .background { NexusBackdrop() }
         .foregroundStyle(palette.ink)
         .tint(accent)
         .toggleStyle(.switch)
+        .onChange(of: model.latestInstantPhoto?.id) { _, _ in
+            if let photo = model.latestInstantPhoto { preview = photo.url }
+        }
         .fileImporter(isPresented: $imported, allowedContentTypes: [.item]) {
             switch $0 {
             case .success(let url): model.sendFile(url)
             case .failure(let error): model.problem = error.localizedDescription
             }
         }
-        .sheet(isPresented: Binding(get: { model.invitation != nil || model.pending != nil },
-                                   set: { if !$0 { model.cancelPair() } })) { pairing }
+        .task {
+            if !seenConnectionGuide {
+                seenConnectionGuide = true
+                if !networkConsent && model.peers.isEmpty { connectionGuide = true }
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { connectionGuide || model.invitation != nil || model.pending != nil },
+            set: { if !$0 { closeConnectionGuide() } }
+        )) {
+            if connectionGuide {
+                connectionOnboarding
+            } else {
+                pairing
+            }
+        }
         .sheet(isPresented: $wirelessClipboardSetup) {
             WirelessClipboardSetup(device: model.adbClipboard.wirelessDevice) { device, pairing in
                 model.adbClipboard.startWiFi(device: device, pairing: pairing)
             }
-        }
-        .confirmationDialog("Abrir controle USB?", isPresented: $usbConfirm) {
-            Button("Abrir scrcpy") { model.screen.launchUSB() }
-        } message: {
-            Text("O scrcpy abre uma janela própria para o aparelho conectado e autorizado via depuração USB.")
         }
         .confirmationDialog("Limpar o histórico da área de transferência?", isPresented: $clipboardClear) {
             Button("Limpar histórico", role: .destructive) { model.clipboard.clear() }
@@ -84,6 +127,17 @@ struct Dashboard: View {
             if let preview {
                 VStack(alignment: .trailing, spacing: 12) {
                     FilePreview(url: preview)
+                    if model.latestInstantPhoto?.url == preview {
+                        HStack {
+                            Button("Copiar arquivo") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.writeObjects([preview as NSURL])
+                            }
+                            ShareLink(item: preview)
+                                .onDrag { NSItemProvider(contentsOf: preview) ?? NSItemProvider() }
+                            Spacer()
+                        }
+                    }
                     Button("Fechar") { self.preview = nil }.keyboardShortcut(.cancelAction)
                 }.padding(15).frame(minWidth: 560, minHeight: 410)
             }
@@ -91,86 +145,657 @@ struct Dashboard: View {
     }
 
     private var dashboardContent: some View {
-        ScrollViewReader { scroll in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(model.section.rawValue)
-                            .font(.system(size: 33, weight: .semibold, design: .rounded))
-                            .tracking(-0.75)
-                            .accessibilityAddTraits(.isHeader)
-                        if model.section == .overview {
-                            Text("Acesse o conteúdo e as funções do seu Android neste Mac.")
-                                .foregroundStyle(palette.muted)
+        GeometryReader { viewport in
+            ScrollViewReader { scroll in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        if model.section != .overview {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(model.section.rawValue)
+                                        .font(.system(size: 33, weight: .semibold, design: .rounded))
+                                        .tracking(-0.75)
+                                        .accessibilityAddTraits(.isHeader)
+                                }
+                                Spacer()
+                                if model.section == .documents {
+                                    Button { model.requestScan() } label: {
+                                        Label("Digitalizar novo", systemImage: "document.viewfinder")
+                                    }
+                                    .buttonStyle(NexusPillStyle(compact: true)).disabled(!model.canRequestScan)
+                                }
+                                if model.section == .files {
+                                    Button { imported = true } label: {
+                                        Label("Enviar novo", systemImage: "arrow.up")
+                                    }
+                                    .buttonStyle(NexusPillStyle(compact: true)).disabled(!model.canSendFiles)
+                                }
+                            }
+                        }
+
+                        if let problem = model.problem ?? model.networkProblem {
+                            Label(problem, systemImage: "exclamationmark.circle")
+                                .foregroundStyle(palette.accent)
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .nexusPanel(palette, radius: 12, highlighted: true)
+                        }
+
+                        switch model.section {
+                        case .overview: overview(size: viewport.size)
+                        case .conversation: EmptyView()
+                        case .devices: devices
+                        case .clipboard: clipboard
+                        case .documents: documents
+                        case .gallery: gallery
+                        case .files: files
+                        case .notifications: notifications
+                        case .remote: remote
+                        case .settings: settings
                         }
                     }
-
-                    if let problem = model.problem ?? model.networkProblem {
-                        Label(problem, systemImage: "exclamationmark.circle")
-                            .foregroundStyle(palette.accent)
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .nexusPanel(palette, radius: 12, highlighted: true)
-                    }
-
-                    switch model.section {
-                    case .overview: overview
-                    case .devices: devices
-                    case .clipboard: clipboard
-                    case .documents: documents
-                    case .gallery: gallery
-                    case .files: files
-                    case .notifications: notifications
-                    case .remote: remote
-                    case .settings: settings
-                    }
+                    .padding(.horizontal, 28)
+                    .padding(.top, 5)
+                    .padding(.bottom, 20)
+                    .frame(maxWidth: 1650, alignment: .leading)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, 28)
-                .padding(.top, 5)
-                .padding(.bottom, 20)
-                .frame(maxWidth: 1650, alignment: .leading)
-                .frame(maxWidth: .infinity)
-            }
-            .id(model.section)
-            .onChange(of: latestScanPage?.id) { _, page in
-                guard page != nil else { return }
-                if model.section == .documents { scroll.scrollTo("scan-preview", anchor: .top) }
-                else { model.section = .documents }
+                .id(model.section)
+                .onChange(of: latestScanPage?.id) { _, page in
+                    guard page != nil else { return }
+                    if model.section == .documents { scroll.scrollTo("scan-preview", anchor: .top) }
+                    else { model.section = .documents }
+                }
             }
         }
     }
 
-    private var overview: some View {
-        VStack(alignment: .leading, spacing: 23) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 140), spacing: 12), count: 4), spacing: 12) {
-                shortcut(.gallery, title: "Galeria", detail: "Abra fotos e vídeos", highlighted: true)
-                shortcut(.clipboard, title: "Área de transferência", detail: "Sincronize o que copiar")
-                shortcut(.documents, title: "Documentos", detail: "Digitalize com o celular")
-                shortcut(.files, title: "Arquivos", detail: "Envie e receba arquivos")
-            }
-
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 2),
-                      alignment: .leading, spacing: 12) {
-                card("Fotos recentes", icon: "photo") {
-                    recent(mediaFiles, empty: "As fotos baixadas da Galeria aparecem aqui.")
-                }
-                card("Documentos recentes", icon: "doc.text") {
-                    recent(documentFiles, empty: "As digitalizações recebidas aparecem aqui.")
-                }
-                card("Últimos itens copiados", icon: Section.clipboard.icon) {
-                    if model.clipboard.items.isEmpty { empty("O histórico está vazio.") }
-                    ForEach(model.clipboard.items.prefix(3)) { item in
-                        Text(item.text).lineLimit(1).foregroundStyle(palette.muted)
+    private func overview(size: CGSize) -> some View {
+        let columnWidth = min(max(size.width * 0.37, 250), 545)
+        // Preserve the handset proportions while using the available viewport height.
+        let phoneHeight = min(max(size.height - 130, 380), (columnWidth - 36) * 1.98, 800)
+        return HStack(alignment: .top, spacing: 30) {
+            phonePanel(height: phoneHeight)
+                .frame(width: columnWidth)
+                .padding(.vertical, 20)
+                .nexusPanel(palette, radius: 22)
+            VStack(alignment: .leading, spacing: 24) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(model.selected?.name ?? "Seu Android").font(.title2.weight(.semibold))
+                        Label(model.active ? "Conectado" : "Desconectado",
+                              systemImage: model.active ? "wifi" : "wifi.slash")
+                            .font(.caption).foregroundStyle(model.active ? palette.connected : palette.muted)
+                    }
+                    Spacer()
+                    if let battery = model.selectedStatus?.battery {
+                        Label("\(battery)%", systemImage: "battery.50percent")
                     }
                 }
-                card("Atividade", icon: "clock.arrow.circlepath") {
-                    if model.events.isEmpty { empty("A atividade aparece após o pareamento.") }
-                    ForEach(model.events.prefix(4)) { event in
-                        HStack {
-                            Label(event.title, systemImage: event.icon).lineLimit(1)
-                            Spacer()
-                            Text(event.date, style: .time).foregroundStyle(palette.muted).font(.caption)
+                if !model.active {
+                    Button("Conectar Android") { connectionGuide = true }
+                        .buttonStyle(NexusPillStyle(prominent: true, compact: true))
+                }
+                Button { model.requestInstantPhoto() } label: {
+                    Label(model.cameraPending ? "Aguardando foto…" : "Tirar foto com o Android", systemImage: "camera")
+                }
+                .buttonStyle(NexusPillStyle(compact: true))
+                .disabled(!model.canRequestPhoto || model.cameraPending)
+                .help("Ative Arquivos e autorize solicitações de câmera no MasterSync do Android.")
+                if let feedback = model.cameraFeedback, !feedback.isEmpty { empty(feedback) }
+                if let peer = model.selected?.id, model.active, let alert = model.batteryMessages[peer] {
+                    Label(alert, systemImage: "battery.25percent")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(palette.accent)
+                }
+                androidLauncher
+                audioPanel
+                compactNotifications
+                Toggle("Área de transferência", isOn: Binding(
+                    get: { model.clipboardEnabled || model.adbClipboard.transport != nil },
+                    set: {
+                        model.clipboardEnabled = $0
+                        if !$0 {
+                            model.adbClipboard.stop()
+                        } else if let device = model.adbClipboard.wirelessDevice {
+                            model.adbClipboard.startWiFi(device: device)
                         }
+                    }
+                ))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var launcherPins: [String: [String]] {
+        (try? JSONDecoder().decode([String: [String]].self, from: storedLauncherPins)) ?? [:]
+    }
+
+    private var canLaunchApps: Bool {
+        model.canMirror && model.wirelessControlDevice(for: model.selected?.id) != nil
+            && !model.screen.preparingControl
+    }
+
+    private var androidLauncher: some View {
+        let peer = model.selected?.id ?? ""
+        let apps = model.launcherLists[peer] ?? []
+        let pins = launcherPins[peer] ?? []
+        let pinnedApps = pins.compactMap { id in apps.first { $0.id == id } }
+        return VStack(alignment: .leading, spacing: 9) {
+            Button {
+                launcherSearch = ""
+                showingLauncher.toggle()
+                if showingLauncher { model.refreshLauncher() }
+            } label: {
+                Label("Apps do Android", systemImage: "square.grid.2x2")
+            }
+            .buttonStyle(NexusPillStyle(compact: true))
+            .popover(isPresented: $showingLauncher, arrowEdge: .bottom) {
+                launcherPopover(apps: apps, peer: peer, pins: pins)
+            }
+            if !pinnedApps.isEmpty {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], alignment: .leading, spacing: 8) {
+                    ForEach(pinnedApps) { app in
+                        Button { model.launchAndroidApp(app) } label: {
+                            Text(Wire.visible(app.label, limit: 70)).lineLimit(1).frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(NexusPillStyle(compact: true)).disabled(!canLaunchApps)
+                    }
+                }
+            }
+        }
+        .task(id: model.launcherAvailable && !peer.isEmpty ? peer : "") { model.refreshLauncher() }
+        .onChange(of: peer) { _, _ in showingLauncher = false }
+    }
+
+    private func launcherPopover(apps: [AndroidApp], peer: String, pins: [String]) -> some View {
+        let filtered = apps.filter {
+            launcherSearch.isEmpty || $0.label.localizedStandardContains(launcherSearch)
+                || $0.component.localizedStandardContains(launcherSearch)
+        }
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Apps do Android").font(.headline)
+                Spacer()
+                Button { model.refreshLauncher() } label: { Image(systemName: "arrow.clockwise") }
+                    .disabled(!model.launcherAvailable).accessibilityLabel("Atualizar lista de apps")
+            }
+            if !model.active {
+                empty("Conecte o Android para carregar os apps.")
+            } else if !model.launcherAvailable {
+                empty("Atualize o MasterSync no Android para ver os apps.")
+            } else {
+                if model.wirelessControlDevice(for: peer) == nil {
+                    Button("Configurar controle por Wi-Fi") {
+                        showingLauncher = false
+                        openWirelessControlGuide()
+                    }
+                    .buttonStyle(NexusPillStyle(compact: true))
+                } else if !model.canMirror {
+                    empty("Ative o espelhamento no MasterSync do Android.")
+                }
+                TextField("Buscar app", text: $launcherSearch).textFieldStyle(.roundedBorder)
+                if model.launcherLists[peer] == nil {
+                    Text("Aguardando a lista do Android…").foregroundStyle(palette.muted)
+                } else if filtered.isEmpty {
+                    empty("Nenhum app encontrado.")
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 3) {
+                            ForEach(filtered) { app in
+                                let pinned = pins.contains(app.id)
+                                HStack {
+                                    Button {
+                                        showingLauncher = false
+                                        model.launchAndroidApp(app)
+                                    } label: {
+                                        Label(Wire.visible(app.label, limit: 70), systemImage: "app")
+                                            .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .buttonStyle(.plain).disabled(!canLaunchApps)
+                                    Button {
+                                        var saved = launcherPins
+                                        var ids = saved[peer] ?? []
+                                        if pinned { ids.removeAll { $0 == app.id } }
+                                        else { ids.append(app.id) }
+                                        saved[peer] = ids
+                                        if let data = try? JSONEncoder().encode(saved) { storedLauncherPins = data }
+                                    } label: { Image(systemName: pinned ? "pin.fill" : "pin") }
+                                    .buttonStyle(NexusPillStyle(compact: true))
+                                    .help(pinned ? "Desafixar app" : "Fixar app")
+                                    .accessibilityLabel(pinned ? "Desafixar app" : "Fixar app")
+                                }
+                                .padding(.vertical, 3)
+                            }
+                        }
+                    }
+                    .frame(height: 240)
+                }
+            }
+        }.padding(15).frame(width: 320)
+    }
+
+    private var audioPanel: some View {
+        let screen = model.screen
+        return card("Áudio do Android", icon: "speaker.wave.2") {
+            Toggle("Ouvir no Mac", isOn: Binding(
+                get: { screen.audioOnlyActive },
+                set: { enabled in
+                    if enabled {
+                        if let device = model.wirelessControlDevice(for: model.selected?.id) {
+                            screen.launchScrcpy(audioOnly: true, wireless: device)
+                        } else { openWirelessControlGuide() }
+                    } else { screen.stopUSB() }
+                }
+            ))
+            .disabled(screen.connecting || (screen.usbActive && !screen.audioOnlyActive))
+            Divider()
+            HStack(spacing: 10) {
+                Image(systemName: "music.note")
+                    .frame(width: 40, height: 40)
+                    .background(palette.accentSurface, in: RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(palette.accent)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.currentMedia?.name ?? "Reprodução").lineLimit(1)
+                    if let artist = model.currentMedia?.text {
+                        Text(artist).font(.caption).foregroundStyle(palette.muted).lineLimit(1)
+                    }
+                }
+                Spacer()
+                playbackButton("previous", icon: "backward.end.fill", title: "Anterior")
+                if let playing = model.currentMedia?.playing {
+                    playbackButton(playing ? "pause" : "play", icon: playing ? "pause.fill" : "play.fill",
+                                   title: playing ? "Pausar" : "Reproduzir")
+                } else {
+                    playbackButton("play", icon: "play.fill", title: "Reproduzir")
+                    playbackButton("pause", icon: "pause.fill", title: "Pausar")
+                }
+                playbackButton("next", icon: "forward.end.fill", title: "Próxima")
+            }
+            if let volume {
+                HStack {
+                    Slider(value: Binding(get: { self.volume ?? volume }, set: { self.volume = $0 }),
+                           in: 0...100, step: 1) {
+                        Label("Volume no Mac", systemImage: "speaker.wave.2")
+                    } onEditingChanged: { editing in
+                        if !editing, let level = self.volume {
+                            Task {
+                                // Apply the volume to the current macOS output.
+                                self.volume = await outputVolume(setTo: Int(level))
+                            }
+                        }
+                    }
+                    Text("\(Int(volume))%").monospacedDigit()
+                }
+            }
+            if screen.connecting { ProgressView("Conectando…").controlSize(.small) }
+            if let feedback = screen.feedback { empty(feedback) }
+        }
+        .task { volume = await outputVolume() }
+        .task(id: model.selected?.id) {
+            while !Task.isCancelled {
+                model.refreshMedia()
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            }
+        }
+    }
+
+    private func outputVolume(setTo level: Int? = nil) async -> Double? {
+        await Task.detached(priority: .utility) {
+            let process = Process()
+            let pipe = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            var commands: [String] = []
+            if let level { commands += ["-e", "set volume output volume \(level)"] }
+            process.arguments = commands + ["-e", "output volume of (get volume settings)"]
+            process.standardOutput = pipe
+            process.standardError = FileHandle.nullDevice
+            do {
+                try process.run()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                guard process.terminationStatus == 0 else { return nil }
+                return Double(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+            } catch { return nil }
+        }.value
+    }
+
+    private func playbackButton(_ command: String, icon: String, title: String) -> some View {
+        Button { model.mediaControl(command) } label: { Image(systemName: icon) }
+            .buttonStyle(NexusPillStyle(compact: true))
+            .disabled(!model.canPlayMedia)
+            .help(title).accessibilityLabel(title)
+    }
+
+    private var notificationButton: some View {
+        Button { showNotices.toggle() } label: {
+            Image(systemName: model.notifications.notices.isEmpty ? "bell" : "bell.badge")
+        }
+        .buttonStyle(NexusPillStyle(compact: true))
+        .accessibilityLabel("Notificações")
+        .popover(isPresented: $showNotices, arrowEdge: .bottom) {
+            compactNotifications.frame(width: 340).padding(10)
+        }
+    }
+
+    private func phonePanel(height: CGFloat) -> some View {
+        VStack(spacing: 10) {
+            embeddedPhone(height: height)
+                .dropDestination(for: URL.self) { urls, _ in
+                    targetingPhoneDrop = false
+                    return model.sendDroppedFiles(urls)
+                } isTargeted: { targetingPhoneDrop = $0 && model.canSendFiles }
+                .overlay {
+                    if targetingPhoneDrop {
+                        RoundedRectangle(cornerRadius: 27)
+                            .strokeBorder(palette.accent, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
+                            .background(palette.accentSurface.opacity(0.9), in: RoundedRectangle(cornerRadius: 27))
+                            .overlay {
+                                Label("Solte para enviar", systemImage: "arrow.up.circle")
+                                    .font(.headline).foregroundStyle(palette.accent)
+                            }
+                            .allowsHitTesting(false)
+                    }
+                }
+            Button { model.findPhone() } label: {
+                Label("Tocar celular", systemImage: "bell.badge")
+            }
+            .buttonStyle(NexusPillStyle(compact: true)).disabled(!model.canFindPhone)
+            if let feedback = model.actionFeedback { empty(feedback) }
+        }
+    }
+
+    private func embeddedPhone(height: CGFloat = 454) -> some View {
+        let screen = model.screen
+        return VStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 28).fill(Color.black.opacity(0.91))
+                if let frame = screen.frame {
+                    GeometryReader { canvas in
+                        let ratio = frame.size.width / max(frame.size.height, 1)
+                        let width = min(canvas.size.width, canvas.size.height * ratio)
+                        let height = width / max(ratio, 0.01)
+                        Image(nsImage: frame).resizable().scaledToFit()
+                            .frame(width: width, height: height)
+                            .contentShape(Rectangle())
+                            .gesture(DragGesture(minimumDistance: 0).onEnded { gesture in
+                                // The fit rectangle excludes the black bars from touch input.
+                                guard width > 0, height > 0 else { return }
+                                screen.gesture(from: CGPoint(x: gesture.startLocation.x / width,
+                                                             y: gesture.startLocation.y / height),
+                                               to: CGPoint(x: gesture.location.x / width, y: gesture.location.y / height))
+                            })
+                            .position(x: canvas.size.width / 2, y: canvas.size.height / 2)
+                            .accessibilityLabel("Tela interativa do Android")
+                    }
+                    if !screen.controlling && !screen.preparingControl {
+                        embeddedControlButton
+                    }
+                } else {
+                    VStack(spacing: 14) {
+                        Image(systemName: "iphone").font(.system(size: 41, weight: .ultraLight))
+                            .foregroundStyle(.white.opacity(0.55)).accessibilityHidden(true)
+                        if screen.preparingControl || screen.requesting || screen.sharing {
+                            ProgressView().controlSize(.small)
+                            Text(screen.requesting ? "Autorize no Android" : "Conectando…")
+                                .font(.caption).foregroundStyle(.white)
+                        } else {
+                            embeddedControlButton
+                            if !model.canMirror {
+                                Text(model.active ? "Autorize o espelhamento no Android." : "Conecte seu Android para começar.")
+                                    .font(.caption).foregroundStyle(.white.opacity(0.75))
+                                    .multilineTextAlignment(.center)
+                            }
+                        }
+                    }
+                    .padding(12)
+                }
+            }
+            .padding(5)
+            .frame(width: height * 0.507, height: height)
+            .clipShape(.rect(cornerRadius: 27))
+            .overlay { RoundedRectangle(cornerRadius: 27).strokeBorder(palette.border, lineWidth: 2).allowsHitTesting(false) }
+            HStack(spacing: 10) {
+                Button { screen.pressSystemKey(home: false) } label: { Image(systemName: "chevron.left") }
+                    .accessibilityLabel("Voltar no Android")
+                Button { screen.pressSystemKey(home: true) } label: { Image(systemName: "circle") }
+                    .accessibilityLabel("Tela inicial do Android")
+                Button { screen.end() } label: { Image(systemName: "stop.fill") }
+                    .accessibilityLabel("Encerrar controle").help("Encerrar controle")
+            }
+            .buttonStyle(NexusPillStyle(compact: true))
+            .disabled(!screen.controlling || !screen.sharing)
+            .opacity(screen.controlling && screen.sharing ? 1 : 0)
+        }
+    }
+
+    private var embeddedControlButton: some View {
+        Button {
+            if let peer = model.selected?.id {
+                if let device = model.wirelessControlDevice(for: peer) {
+                    model.screen.beginControl(peer, wireless: device)
+                } else { openWirelessControlGuide() }
+            }
+        } label: {
+            Label("Controlar", systemImage: "play.fill")
+        }
+        .buttonStyle(NexusPillStyle(prominent: true, compact: true))
+        .disabled(!model.canMirror)
+    }
+
+    private enum ConversationEntry: Identifiable {
+        case text(NexusModel.ChatEntry)
+        case file(ReceivedFile, outgoing: Bool)
+
+        var id: String {
+            switch self {
+            case .text(let entry): "message-" + entry.id
+            case .file(let item, let outgoing): "file-\(outgoing)-" + item.id
+            }
+        }
+
+        var date: Date {
+            switch self {
+            case .text(let entry): entry.date
+            case .file(let item, _): item.date
+            }
+        }
+
+        var outgoing: Bool {
+            switch self {
+            case .text(let entry): entry.outgoing
+            case .file(_, let outgoing): outgoing
+            }
+        }
+    }
+
+    private var conversationEntries: [ConversationEntry] {
+        guard let peer = model.selected?.id else { return [] }
+        let texts = model.messages.filter { $0.peer == peer }.map(ConversationEntry.text)
+        let incoming = model.files.received.filter { $0.peerID == peer }.map { ConversationEntry.file($0, outgoing: false) }
+        let outgoing = model.files.sent.filter { $0.peerID == peer }.map { ConversationEntry.file($0, outgoing: true) }
+        return Array((texts + incoming + outgoing).sorted { $0.date < $1.date }.suffix(60))
+    }
+
+    private var conversationPanel: some View {
+        let entries = conversationEntries
+        return VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Image(systemName: "iphone")
+                    .foregroundStyle(palette.accent)
+                    .frame(width: 38, height: 38)
+                    .background(palette.accentSurface, in: RoundedRectangle(cornerRadius: 11))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(model.selected?.name ?? "Conversa").font(.headline)
+                    Label(model.active ? "Conectado" : "Desconectado",
+                          systemImage: model.active ? "wifi" : "wifi.slash")
+                        .font(.caption).foregroundStyle(model.active ? palette.connected : palette.muted)
+                }
+                Spacer()
+            }.padding(16)
+            Divider()
+            ScrollViewReader { scroll in
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        if entries.isEmpty {
+                            VStack(spacing: 8) {
+                                Image(systemName: "bubble.left.and.bubble.right").font(.title2)
+                                empty("Envie uma mensagem ou um arquivo para o Android.")
+                            }
+                            .foregroundStyle(palette.accent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 54)
+                        }
+                        ForEach(entries.indices, id: \.self) { index in
+                            let entry = entries[index]
+                            if index == 0 || !calendar.isDate(entries[index - 1].date, inSameDayAs: entry.date) {
+                                Text(entry.date, style: .date)
+                                    .font(.caption.weight(.medium)).foregroundStyle(palette.muted)
+                                    .padding(.horizontal, 10).padding(.vertical, 4)
+                                    .background(palette.control, in: Capsule())
+                            }
+                            conversationBubble(entry).id(entry.id)
+                        }
+                    }
+                    .padding(22)
+                }
+                .frame(maxHeight: .infinity)
+                .onChange(of: entries.last?.id, initial: true) { _, id in
+                    if let id { scroll.scrollTo(id, anchor: .bottom) }
+                }
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Button { imported = true } label: { Image(systemName: "paperclip") }
+                        .buttonStyle(NexusPillStyle(compact: true)).disabled(!model.canSendFiles)
+                        .help("Enviar arquivo").accessibilityLabel("Enviar arquivo")
+                    TextField(model.canChat ? "Mensagem" : "Conversa indisponível", text: $chatDraft)
+                        .textFieldStyle(.roundedBorder).disabled(!model.canChat)
+                        .onSubmit { sendChatDraft() }
+                    Button { sendChatDraft() } label: { Image(systemName: "arrow.up") }
+                        .buttonStyle(NexusPillStyle(prominent: true, compact: true))
+                        .disabled(!model.canChat || chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatDraft.utf8.count > 2048)
+                        .help("Enviar mensagem").accessibilityLabel("Enviar mensagem")
+                }
+                ForEach(model.files.progress.filter { $0.peer == model.selected?.id }) { item in
+                    ProgressView(value: item.fraction) { Text(item.name).lineLimit(1) }
+                }
+                if let peer = model.selected?.id, let waiting = model.files.queued[peer], !waiting.isEmpty {
+                    Label(waiting.count == 1 ? "1 arquivo na fila" : "\(waiting.count) arquivos na fila",
+                          systemImage: "tray.full")
+                        .font(.caption).foregroundStyle(palette.muted)
+                }
+                if let feedback = model.files.feedback { empty(feedback) }
+            }
+            .padding(14)
+        }
+        .frame(maxWidth: 1200, maxHeight: .infinity)
+        .nexusPanel(palette, radius: 20)
+        .frame(maxWidth: .infinity)
+    }
+
+
+    private func sendChatDraft() {
+        if model.sendChat(chatDraft) { chatDraft = "" }
+    }
+
+    private func conversationBubble(_ entry: ConversationEntry) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            switch entry {
+            case .text(let message):
+                Text(message.text).textSelection(.enabled)
+                if message.outgoing && !message.confirmed {
+                    Text("Sem confirmação").font(.caption2).foregroundStyle(palette.muted)
+                }
+            case .file(let item, _):
+                Button { preview = item.url } label: {
+                    Label(item.offer.name, systemImage: "doc").lineLimit(2)
+                }
+                .buttonStyle(.plain).disabled(!FileManager.default.fileExists(atPath: item.url.path))
+            }
+            Text(entry.date, style: .time)
+                .font(.caption2).foregroundStyle(palette.muted)
+        }
+        .padding(.vertical, 9).padding(.horizontal, 13)
+        .background(entry.outgoing ? palette.accentSurface : palette.control, in: RoundedRectangle(cornerRadius: 12))
+        .frame(maxWidth: 560, alignment: entry.outgoing ? .trailing : .leading)
+        .frame(maxWidth: .infinity, alignment: entry.outgoing ? .trailing : .leading)
+    }
+
+    private var androidDndToggle: some View {
+        Toggle("Não Perturbe no Android", isOn: Binding(
+            get: { model.androidDnd?.dndEnabled == true },
+            set: { model.setAndroidDnd($0) }))
+            .controlSize(.small)
+            .disabled(!model.active || model.androidDnd?.dndAllowed != true)
+    }
+
+    @ViewBuilder private var notificationFeedback: some View {
+        if model.active, let state = model.androidDnd {
+            if let message = state.message {
+                empty(Wire.visible(message))
+            } else if state.dndAllowed != true {
+                empty("No Android, abra MasterSync → Configurações → Notificações e autorize o Não Perturbe.")
+            }
+        }
+        if let peer = model.selected?.id, let error = model.notifications.dismissErrors[peer] {
+            empty(error)
+        }
+    }
+
+    private func dismissNoticeButton(_ notice: NotificationSync.Notice) -> some View {
+        Button { model.notifications.dismiss(notice) } label: {
+            Image(systemName: "xmark.circle")
+        }
+        .buttonStyle(.borderless)
+        .help("Dispensar no Android")
+        .accessibilityLabel("Dispensar no Android")
+        .disabled(!notice.canDismiss)
+    }
+
+    private var compactNotifications: some View {
+        let notices = model.notifications.notices.filter { $0.peer == model.selected?.id }
+        return card("Notificações", icon: "bell") {
+            HStack {
+                androidDndToggle
+                Spacer()
+                Button("Ver todas") { showNotices = false; model.section = .notifications }
+                    .buttonStyle(NexusPillStyle(compact: true))
+            }
+            notificationFeedback
+            if !model.notificationsEnabled {
+                Button("Ativar notificações") { showNotices = false; model.section = .notifications }
+                    .buttonStyle(NexusPillStyle(compact: true))
+            } else if notices.isEmpty {
+                empty(model.active ? "Nenhuma notificação ativa. Confira se o espelhamento está autorizado no Android." : "Conecte o Android para ver as notificações.")
+            }
+            ForEach(notices.prefix(3)) { notice in
+                HStack(alignment: .top, spacing: 8) {
+                    if let icon = notice.icon {
+                        Image(nsImage: icon).resizable().scaledToFit().frame(width: 24, height: 24)
+                    } else {
+                        Image(systemName: "bell.fill").frame(width: 24, height: 24)
+                            .foregroundStyle(palette.accent)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(notice.app).font(.caption.weight(.semibold)).foregroundStyle(palette.muted)
+                        Text(notice.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                        if !notice.body.isEmpty {
+                            Text(notice.body).font(.caption).lineLimit(2)
+                        }
+                    }
+                    Spacer()
+                    Text(notice.date, style: .time).font(.caption2).foregroundStyle(palette.muted)
+                    dismissNoticeButton(notice)
+                }
+                .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                .background(palette.control, in: RoundedRectangle(cornerRadius: 12))
+                .contextMenu {
+                    if notice.canReply {
+                        Button("Responder") { replyText = ""; replyNotice = notice }
                     }
                 }
             }
@@ -182,9 +807,18 @@ struct Dashboard: View {
             card("Rede local", icon: "wifi") {
                 Text("O Mac usa a rede local para receber conexões dos celulares que você autorizar.")
                     .foregroundStyle(palette.muted)
+                HStack {
+                    Button("Conectar Android") { connectionGuide = true }
+                        .buttonStyle(NexusPillStyle(prominent: true))
+                    if model.active {
+                        Button("Configurar controle e áudio por Wi-Fi") {
+                            guidePeer = model.selected?.id
+                            connectionGuide = true
+                        }
+                    }
+                }
                 if model.serviceReady {
                     HStack {
-                        Button("Gerar QR") { model.pair() }.buttonStyle(NexusPillStyle(prominent: true))
                         Button("Gerar QR para USB") { model.pair(usb: true) }
                         Spacer()
                         Button("Desativar rede local") { model.disableNetwork() }
@@ -293,76 +927,73 @@ struct Dashboard: View {
                 }
                 .id("scan-preview")
             }
-            card("Scanner do Android", icon: Section.documents.icon) {
-                Text("Autorize solicitações de digitalização no celular. O scanner abre após confirmação no Android.")
-                    .foregroundStyle(palette.muted)
-                Button("Solicitar digitalização") { model.requestScan() }
-                    .buttonStyle(NexusPillStyle(prominent: true)).disabled(!model.canRequestScan)
-                if let feedback = model.scanRequestFeedback { empty(feedback) }
-            }
-            card("Documentos recebidos", icon: "tray.and.arrow.down") {
-                receivedByDate(documentFiles, empty: "Nenhum documento recebido.")
-            }
+            if let feedback = model.scanRequestFeedback { empty(feedback) }
+            if let feedback = model.files.feedback { empty(feedback) }
+            receivedGallery(documentFiles, empty: "Nenhum documento.", scanActions: true)
+        }
+        .confirmationDialog("Mover digitalização para o Lixo?", isPresented: Binding(
+            get: { pendingScanDeletion != nil },
+            set: { if !$0 { pendingScanDeletion = nil } }
+        ), presenting: pendingScanDeletion) { item in
+            Button("Mover para o Lixo", role: .destructive) { model.files.trashReceived(item.id) }
+            Button("Cancelar", role: .cancel) {}
+        } message: { item in
+            Text(item.offer.name)
         }
     }
 
     private var gallery: some View {
         VStack(alignment: .leading, spacing: 16) {
             if model.canBrowseGallery {
-                Toggle("Biblioteca do Android", isOn: $model.galleryEnabled)
                 GalleryBrowser(gallery: model.gallery, files: model.files, canTransfer: model.canSendFiles,
-                               grouping: $libraryGrouping)
+                               grouping: $libraryGrouping, deviceID: model.selected?.id ?? "")
             } else {
-                card("Biblioteca do Android", icon: "albums") {
-                    Toggle("Navegar na galeria do Android", isOn: $model.galleryEnabled)
-                    empty("Ative a galeria nos dois dispositivos e autorize as fotos ou os vídeos no Android.")
-                    if !model.active {
-                        Button("Abrir dispositivos") { model.section = .devices }.buttonStyle(NexusPillStyle(compact: true))
-                    }
+                if !model.active {
+                    empty("Aguardando conexão com o Android.")
+                } else if !model.galleryEnabled {
+                    empty("Ative a galeria em Configurações.")
+                } else {
+                    empty("Autorize as fotos no MasterSync do Android.")
                 }
-            }
-            card("Fotos e vídeos recebidos", icon: "tray.and.arrow.down") {
-                receivedByDate(mediaFiles, empty: "Os originais baixados aparecem aqui.")
+                if !mediaFiles.isEmpty {
+                    receivedGallery(mediaFiles, empty: "")
+                }
             }
         }
     }
 
     private var files: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            card("Transferência local", icon: "arrow.up.arrow.down") {
-                Toggle("Permitir envio e recebimento de arquivos", isOn: $model.filesEnabled)
-                Text("Ative arquivos nos dois dispositivos. Envie um arquivo de até 4 GB por vez para cada celular.")
-                    .foregroundStyle(palette.muted)
-                Button("Escolher arquivo…") { imported = true }
-                    .buttonStyle(NexusPillStyle(prominent: true)).disabled(!model.canSendFiles)
-                if let feedback = model.files.feedback { empty(feedback) }
-                ForEach(model.files.progress) { transfer in
-                    ProgressView(value: transfer.fraction) {
-                        Label(transfer.name, systemImage: transfer.sending ? "arrow.up" : "arrow.down")
-                    } currentValueLabel: {
-                        Text(transfer.verifying ? "Verificando integridade…" :
-                             "\(ByteCountFormatter.string(fromByteCount: transfer.offset, countStyle: .file)) de \(ByteCountFormatter.string(fromByteCount: transfer.size, countStyle: .file))")
-                            .monospacedDigit()
-                    }
+        VStack(alignment: .leading, spacing: 20) {
+            if let feedback = model.files.feedback { empty(feedback) }
+            ForEach(model.files.progress) { transfer in
+                ProgressView(value: transfer.fraction) {
+                    Label(transfer.name, systemImage: transfer.sending ? "arrow.up" : "arrow.down")
+                } currentValueLabel: {
+                    Text(transfer.verifying ? "Verificando…" : "\(Int(transfer.fraction * 100))%")
                 }
             }
-            .dropDestination(for: URL.self) { urls, _ in
-                guard model.canSendFiles, let file = urls.first, file.isFileURL else { return false }
-                model.sendFile(file)
-                return true
-            }
-            card("Recebidos", icon: "tray") {
-                receivedByDate(model.files.received, empty: "Nenhum arquivo recebido.")
-            }
+            Text("Recebidos").font(.headline).accessibilityAddTraits(.isHeader)
+            receivedGallery(model.files.received, empty: "Nenhum arquivo recebido.")
+            Text("Enviados").font(.headline).accessibilityAddTraits(.isHeader)
+            receivedGallery(model.files.sent, empty: "Nenhum arquivo enviado.")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .dropDestination(for: URL.self) { urls, _ in
+            guard model.canSendFiles, let file = urls.first, file.isFileURL else { return false }
+            model.sendFile(file)
+            return true
         }
     }
 
     private var notifications: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let notices = model.notifications.notices.filter { $0.peer == model.selected?.id }
+        return VStack(alignment: .leading, spacing: 14) {
             card("Espelhamento de notificações", icon: "bell") {
                 Toggle("Receber notificações do Android", isOn: $model.notificationsEnabled)
                 Toggle("Ocultar conteúdo neste Mac", isOn: $model.hideNotices)
-                Toggle("Não Perturbe", isOn: $model.quiet)
+                androidDndToggle
+                notificationFeedback
+                Toggle("Silenciar avisos no Mac", isOn: $model.quiet)
                 Button("Autorizar Central de Notificações") { model.notifications.askPermission() }
                 if let status = model.notifications.authorization { empty(status) }
             }
@@ -375,9 +1006,15 @@ struct Dashboard: View {
                     }
                 }
             }
-            card("Recebidas", icon: "tray") {
-                if model.notifications.notices.isEmpty { empty("Nenhuma notificação recebida.") }
-                ForEach(model.notifications.notices) { notice in
+            card("Ativas no Android", icon: "tray") {
+                if model.canRefreshNotices && model.notificationsEnabled {
+                    Button("Atualizar") { model.refreshNotices() }
+                        .buttonStyle(NexusPillStyle(compact: true))
+                }
+                if notices.isEmpty {
+                    empty(model.active ? "Nenhuma notificação ativa." : "Conecte o Android para ver as notificações.")
+                }
+                ForEach(notices) { notice in
                     HStack {
                         VStack(alignment: .leading, spacing: 3) {
                             Label {
@@ -394,7 +1031,7 @@ struct Dashboard: View {
                         if notice.canReply {
                             Button("Responder") { replyText = ""; replyNotice = notice }
                         }
-                        Button("Dispensar") { model.notifications.dismiss(notice) }
+                        dismissNoticeButton(notice)
                     }
                     Divider()
                 }
@@ -404,38 +1041,59 @@ struct Dashboard: View {
 
     private var remote: some View {
         VStack(alignment: .leading, spacing: 14) {
-            card("Espelhamento de tela", icon: "rectangle.on.rectangle") {
-                Text("A captura começa após você autorizar no Android. Para limitar o conteúdo, escolha uma janela de aplicativo no pedido do sistema quando disponível.")
-                    .foregroundStyle(palette.muted)
-                HStack {
-                    Picker("Resolução", selection: Binding(get: { model.screen.maxSize }, set: { model.screen.maxSize = $0 })) {
-                        Text("480 px").tag(480); Text("768 px").tag(768); Text("960 px").tag(960)
+            HStack(alignment: .center, spacing: 28) {
+                remotePhonePreview
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(model.selected?.name ?? "Android")
+                            .font(.title2.weight(.semibold))
+                        Label(model.active ? "Conectado pela rede local" : "Aguardando conexão",
+                              systemImage: model.active ? "wifi" : "wifi.slash")
+                            .font(.subheadline)
+                            .foregroundStyle(model.active ? palette.connected : palette.muted)
                     }
-                    Picker("Quadros por segundo", selection: Binding(get: { model.screen.fps }, set: { model.screen.fps = $0 })) {
-                        Text("6").tag(6); Text("10").tag(10); Text("15").tag(15)
+
+                    HStack(spacing: 8) {
+                        remoteAction(audioOnly: false)
+                        remoteAction(audioOnly: true)
                     }
-                    Picker("Qualidade", selection: Binding(get: { model.screen.quality }, set: { model.screen.quality = $0 })) {
-                        Text("Baixa").tag(50); Text("Média").tag(68); Text("Alta").tag(80)
+
+                    HStack(spacing: 10) {
+                        if model.screen.requesting {
+                            ProgressView().controlSize(.small)
+                            Text("Autorize a prévia no Android.").foregroundStyle(palette.muted)
+                        } else if model.screen.sharing {
+                            Button("Parar prévia") { model.screen.end() }
+                                .buttonStyle(NexusPillStyle(compact: true))
+                            Button("Ampliar") { openWindow(id: "mirror") }
+                                .buttonStyle(NexusPillStyle(compact: true))
+                        } else {
+                            Button("Mostrar prévia") { model.requestMirror() }
+                                .buttonStyle(NexusPillStyle(compact: true))
+                                .disabled(!model.canMirror)
+                                .help("Autorize o espelhamento no Android para mostrar a prévia.")
+                        }
+                        Menu {
+                            Button("Configurar Wi-Fi") { wirelessClipboardSetup = true }
+                            Button("Controlar por USB") { model.screen.launchScrcpy(audioOnly: false) }
+                                .disabled(model.screen.usbActive || model.screen.connecting)
+                            Button("Ouvir por USB") { model.screen.launchScrcpy(audioOnly: true) }
+                                .disabled(model.screen.usbActive || model.screen.connecting)
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                        .fixedSize()
+                        .accessibilityLabel("Opções de conexão")
                     }
-                }.disabled(model.screen.requesting || model.screen.sharing)
-                if model.screen.requesting || model.screen.sharing {
-                    HStack {
-                        Button("Mostrar tela") { openWindow(id: "mirror") }.buttonStyle(NexusPillStyle(prominent: true))
-                        Button("Parar") { model.screen.end() }
+                    if model.screen.connecting {
+                        ProgressView("Conectando ao Android…").controlSize(.small)
                     }
-                } else {
-                    Button("Solicitar espelhamento") { model.requestMirror(); openWindow(id: "mirror") }
-                        .buttonStyle(NexusPillStyle(prominent: true)).disabled(!model.canMirror)
-                    if !model.canMirror { empty("Ative solicitações de espelhamento no Android.") }
+                    if let feedback = model.screen.feedback, !model.screen.requesting { empty(feedback) }
                 }
-                if let feedback = model.screen.feedback { empty(feedback) }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            card("Controle com mouse e teclado por USB", icon: "keyboard") {
-                Text("Requer o scrcpy, o ADB e um Android autorizado para depuração USB. Os atalhos e o arraste de arquivos ficam na janela do scrcpy.")
-                    .foregroundStyle(palette.muted)
-                if model.screen.usbActive { Button("Encerrar controle USB") { model.screen.stopUSB() } }
-                else { Button("Abrir controle USB") { usbConfirm = true } }
-            }
+            .padding(24)
+            .nexusPanel(palette, radius: 22)
             card("Ações no Android", icon: "iphone.radiowaves.left.and.right") {
                 HStack {
                     Button("Tocar telefone") { model.findPhone() }.disabled(!model.canFindPhone)
@@ -447,8 +1105,55 @@ struct Dashboard: View {
                 }
                 if let feedback = model.actionFeedback { empty(feedback) }
             }
-            card("Webcam", icon: "web.camera") { empty("Em desenvolvimento.") }
         }
+    }
+
+    private var remotePhonePreview: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 23).fill(palette.canvas)
+            if let frame = model.screen.frame {
+                // Fit the live frame without cropping system controls.
+                Image(nsImage: frame).resizable().scaledToFit()
+                    .padding(7)
+                    .accessibilityLabel("Prévia da tela do Android")
+            } else {
+                VStack(spacing: 10) {
+                    Image(systemName: "iphone").font(.system(size: 38, weight: .light))
+                        .foregroundStyle(palette.accent)
+                        .accessibilityHidden(true)
+                    Text(model.screen.sharing ? "Carregando prévia…" : "Prévia da tela")
+                        .font(.caption).foregroundStyle(palette.muted)
+                }
+            }
+        }
+        .frame(width: 158, height: 288)
+        .clipShape(.rect(cornerRadius: 23))
+        .overlay {
+            RoundedRectangle(cornerRadius: 23).strokeBorder(palette.border, lineWidth: 2)
+        }
+    }
+
+    private func remoteAction(audioOnly: Bool) -> some View {
+        let screen = model.screen
+        let running = screen.usbActive && screen.audioOnlyActive == audioOnly
+        let title = audioOnly ? (running ? "Parar áudio" : "Ouvir no Mac")
+                              : (running ? "Encerrar controle" : "Controlar Android")
+        let symbol = audioOnly ? (running ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                               : (running ? "stop.fill" : "play.fill")
+        return Button {
+            if running {
+                screen.stopUSB()
+            } else {
+                if let device = model.wirelessControlDevice(for: model.selected?.id) {
+                    screen.launchScrcpy(audioOnly: audioOnly, wireless: device)
+                } else { openWirelessControlGuide() }
+            }
+        } label: {
+            Label(title, systemImage: symbol)
+                .fixedSize()
+        }
+        .buttonStyle(NexusPillStyle(prominent: !audioOnly))
+        .disabled(screen.connecting || (screen.usbActive && !running))
     }
 
     private var settings: some View {
@@ -462,10 +1167,30 @@ struct Dashboard: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Tema")
             }
+            card("Alertas de bateria", icon: "battery.75percent") {
+                Toggle("Avisar sobre a bateria do Android", isOn: $model.batteryAlertsEnabled)
+                if model.batteryAlertsEnabled {
+                    Stepper("Bateria baixa · \(model.lowBatteryLimit)%", value: $model.lowBatteryLimit, in: 5...40, step: 5)
+                    Stepper("Limite de carga · \(model.chargedBatteryLimit)%", value: $model.chargedBatteryLimit, in: 50...100, step: 5)
+                    Button("Autorizar notificações no Mac") { model.notifications.askPermission() }
+                        .buttonStyle(NexusPillStyle(compact: true))
+                    if let status = model.notifications.authorization { empty(status) }
+                }
+            }
             card("Permissões", icon: "hand.raised") {
-                Text("Ative cada integração na tela correspondente. Os dispositivos que podem acessar este Mac ficam em Dispositivos.")
-                    .foregroundStyle(palette.muted)
+                Toggle("Acessar fotos e vídeos do Android", isOn: $model.galleryEnabled)
+                Toggle("Enviar e receber arquivos", isOn: $model.filesEnabled)
                 Button("Gerenciar dispositivos") { model.section = .devices }
+            }
+            card("Digitalizar e colar", icon: "document.viewfinder") {
+                Toggle("Ativar atalho \(ScanPasteShortcut.label)", isOn: $model.scanPasteEnabled)
+                Text("A primeira página vai para a área de transferência. Permita Acessibilidade para colar no campo original.")
+                    .foregroundStyle(palette.muted)
+                Button("Autorizar colagem automática") {
+                    _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+                }
+                .buttonStyle(NexusPillStyle(compact: true))
+                if let feedback = model.scanPasteFeedback { empty(feedback) }
             }
             card("Atalhos de teclado", icon: "keyboard") {
                 Text("Os atalhos abaixo usam Shift + Command quando o Nexus está ativo.")
@@ -487,6 +1212,218 @@ struct Dashboard: View {
         Button(label) { model.theme = value }
             .buttonStyle(NexusPillStyle(selected: model.theme == value, compact: true))
             .accessibilityAddTraits(model.theme == value ? .isSelected : [])
+    }
+
+    private func openWirelessControlGuide() {
+        guidePeer = model.active ? model.selected?.id : nil
+        connectionGuide = true
+    }
+
+    private func closeConnectionGuide() {
+        if testingGuideControl { model.screen.end() }
+        if testingGuideAudio { model.screen.stopUSB() }
+        testingGuideControl = false
+        testingGuideAudio = false
+        guideControlConfirmed = false
+        guideAudioConfirmed = false
+        wifiToolsMessage = nil
+        connectionGuide = false
+        guidePeer = nil
+        model.cancelPair()
+    }
+
+    private var connectionOnboarding: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Label("Conectar Android", systemImage: "iphone")
+                .font(.title2.weight(.semibold))
+            // Read the real pairing state so the guide can resume or retry without a parallel protocol.
+            if let peer = guidePeer {
+                if model.online.contains(peer) {
+                    Label("Android conectado", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(palette.connected)
+                    ScrollView { wirelessOnboarding }.frame(maxHeight: 620)
+                } else {
+                    ProgressView("Aguardando o Android…").controlSize(.small)
+                    Button("Gerar outro QR") { guidePeer = nil; model.pair() }
+                }
+            } else if let pending = model.pending {
+                Text("3 de 4 · Autorizar").font(.headline)
+                Text("Confirme que este é o celular que leu o QR.")
+                Label(pending.peer.name, systemImage: "iphone").font(.headline)
+                Text(pending.peer.model).foregroundStyle(palette.muted)
+                HStack {
+                    Button("Recusar", role: .cancel) { model.confirm(pending, allow: false) }
+                    Spacer()
+                    Button("Autorizar") {
+                        guidePeer = pending.peer.id
+                        model.confirm(pending, allow: true)
+                    }
+                    .buttonStyle(NexusPillStyle(prominent: true))
+                }
+            } else if let invitation = model.invitation {
+                Text("2 de 4 · Ler o QR").font(.headline)
+                Text("No MasterSync do Android, abra Dispositivos e toque em Ler QR.")
+                    .foregroundStyle(palette.muted)
+                if let image = qr(invitation) {
+                    Image(nsImage: image).interpolation(.none).resizable()
+                        .frame(width: 212, height: 212).padding(12).background(.white)
+                        .frame(maxWidth: .infinity)
+                        .accessibilityLabel("Código QR de pareamento")
+                }
+                Button("Gerar outro QR") { model.pair() }
+            } else {
+                Text("1 de 4 · Preparar a rede").font(.headline)
+                Text("Conecte o Mac e o Android à mesma rede Wi-Fi. No celular, abra o MasterSync.")
+                    .foregroundStyle(palette.muted)
+                if model.connecting {
+                    ProgressView("Ativando a rede local…").controlSize(.small)
+                } else {
+                    Button(model.serviceReady ? "Mostrar QR" : "Ativar rede local") {
+                        if model.serviceReady { model.pair() }
+                        else { model.enableNetwork() }
+                    }
+                    .buttonStyle(NexusPillStyle(prominent: true))
+                }
+            }
+            if let problem = model.problem ?? model.networkProblem {
+                Label(problem, systemImage: "exclamationmark.circle").foregroundStyle(palette.accent)
+            }
+            if model.keychainUnavailable {
+                Text("Tente ativar a rede novamente para recuperar a identidade salva. Se o macOS continuar bloqueando o acesso, use uma conexão temporária.")
+                    .foregroundStyle(palette.muted)
+                Button("Conectar só nesta sessão") { confirmTemporaryConnection = true }
+                    .buttonStyle(NexusPillStyle(compact: true))
+            }
+            if model.temporaryNetwork {
+                Label("Sessão temporária · será preciso parear novamente após fechar o app.", systemImage: "clock")
+                    .font(.caption).foregroundStyle(palette.muted)
+            }
+            if guidePeer.map({ model.online.contains($0) }) != true {
+                Button("Fechar") { closeConnectionGuide() }.keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(26)
+        .frame(width: 425)
+        .confirmationDialog("Iniciar conexão temporária?", isPresented: $confirmTemporaryConnection) {
+            Button("Iniciar sessão temporária") { model.startTemporaryNetwork() }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text("Leia um novo QR no Android. Esta autorização vale até você fechar o MasterSync.")
+        }
+    }
+
+    private var wirelessOnboarding: some View {
+        let adb = model.adbClipboard
+        let screen = model.screen
+        let toolsAvailable = screen.adbInstalled && screen.scrcpyInstalled
+        let device = model.wirelessControlDevice(for: guidePeer)
+        let verified = adb.wirelessVerified && device != nil
+        return VStack(alignment: .leading, spacing: 12) {
+            Label("Rede local conectada", systemImage: "checkmark.circle").foregroundStyle(palette.connected)
+            if !toolsAvailable || installingWiFiTools {
+                Text("Ferramentas para controle e áudio").font(.headline)
+                Text("O MasterSync usa o ADB para controlar o Android e o scrcpy para reproduzir o áudio no Mac.")
+                    .foregroundStyle(palette.muted)
+                if installingWiFiTools {
+                    ProgressView("Instalando ferramentas…").controlSize(.small)
+                } else {
+                    if WiFiToolInstaller.homebrewPath == nil {
+                        Text("O guia vai instalar o Homebrew primeiro. O macOS pode pedir autorização de administrador.")
+                            .foregroundStyle(palette.muted)
+                    }
+                    Button("Instalar ferramentas") { installWiFiTools() }
+                        .buttonStyle(NexusPillStyle(prominent: true))
+                }
+            }
+            if let wifiToolsMessage { Text(wifiToolsMessage).foregroundStyle(palette.muted) }
+            if verified, let device {
+                Label("ADB por Wi-Fi verificado para \(model.selected?.name ?? "o Android")",
+                      systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(palette.connected)
+                if !model.canMirror {
+                    Text("Ative o espelhamento nas Configurações do MasterSync no Android para testar o controle.")
+                        .foregroundStyle(palette.muted)
+                }
+                HStack {
+                    Button(testingGuideControl ? "Encerrar teste de controle" : "Testar controle") {
+                        if testingGuideControl {
+                            screen.end()
+                            testingGuideControl = false
+                        } else if let guidePeer {
+                            testingGuideControl = true
+                            screen.beginControl(guidePeer, wireless: device)
+                        }
+                    }
+                    .disabled((!model.canMirror || screen.sharing || screen.preparingControl) && !testingGuideControl)
+                    Button(screen.audioOnlyActive && testingGuideAudio ? "Parar áudio" : "Testar áudio") {
+                        if screen.audioOnlyActive {
+                            screen.stopUSB()
+                            testingGuideAudio = false
+                        } else {
+                            testingGuideAudio = true
+                            screen.launchScrcpy(audioOnly: true, wireless: device)
+                        }
+                    }
+                    .disabled(!screen.scrcpyInstalled || screen.connecting || (screen.usbActive && !testingGuideAudio))
+                }
+                .buttonStyle(NexusPillStyle(compact: true))
+                if testingGuideControl {
+                    if screen.controlling || screen.preparingControl || screen.requesting || screen.sharing {
+                        embeddedPhone().frame(maxWidth: .infinity)
+                    }
+                    if screen.sharing, screen.frame != nil {
+                        Text("Toque ou arraste na prévia para conferir a resposta do Android.")
+                            .font(.caption).foregroundStyle(palette.muted)
+                        Button("O controle funcionou") { guideControlConfirmed = true }
+                            .disabled(guideControlConfirmed)
+                    }
+                }
+                if screen.connecting && testingGuideAudio { ProgressView("Conectando o áudio…").controlSize(.small) }
+                if screen.audioOnlyActive && testingGuideAudio {
+                    Text("Reproduza algo no Android e confira se o som sai no Mac.")
+                        .font(.caption).foregroundStyle(palette.muted)
+                    Button("Ouvi o áudio no Mac") { guideAudioConfirmed = true }
+                        .disabled(guideAudioConfirmed)
+                }
+                if let feedback = screen.feedback { Text(feedback).foregroundStyle(palette.muted) }
+            } else if screen.adbInstalled && !installingWiFiTools {
+                WirelessClipboardSetup(device: device, guided: true, busy: adb.checkingWireless) {
+                    if let guidePeer { model.configureWirelessControl($0, pairing: $1, peer: guidePeer) }
+                }
+                if adb.checkingWireless { ProgressView("Testando depuração sem fio…").controlSize(.small) }
+                if let error = adb.wirelessSetupError { Text(error).foregroundStyle(palette.accent) }
+            }
+            if verified {
+                Label(guideControlConfirmed ? "Controle confirmado" : "Controle ainda não confirmado",
+                      systemImage: guideControlConfirmed ? "checkmark.circle.fill" : "circle")
+                Label(guideAudioConfirmed ? "Áudio confirmado" : "Áudio ainda não confirmado",
+                      systemImage: guideAudioConfirmed ? "checkmark.circle.fill" : "circle")
+            }
+            Button(verified ? (guideControlConfirmed && guideAudioConfirmed ? "Finalizar" : "Finalizar sem confirmar os dois testes") : "Agora não") {
+                closeConnectionGuide()
+                model.section = .overview
+            }
+            .buttonStyle(NexusPillStyle(prominent: verified && guideControlConfirmed && guideAudioConfirmed))
+            .disabled(adb.checkingWireless || installingWiFiTools || screen.connecting)
+        }
+    }
+
+    private func installWiFiTools() {
+        guard !installingWiFiTools else { return }
+        let installADB = !model.screen.adbInstalled
+        let installScrcpy = !model.screen.scrcpyInstalled
+        wifiToolsMessage = nil
+        installingWiFiTools = true
+        Task {
+            defer { installingWiFiTools = false }
+            do {
+                try await Task.detached(priority: .utility) {
+                    try await WiFiToolInstaller.install(adb: installADB, scrcpy: installScrcpy)
+                }.value
+            } catch {
+                wifiToolsMessage = error.localizedDescription
+            }
+        }
     }
 
     private var pairing: some View {
@@ -556,41 +1493,12 @@ struct Dashboard: View {
             .nexusPanel(palette, radius: 16)
     }
 
-    private func shortcut(_ section: Section, title: String, detail: String, highlighted: Bool = false) -> some View {
-        Button { model.section = section } label: {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Image(systemName: section.icon)
-                        .font(.system(size: 23, weight: .medium))
-                        .foregroundStyle(palette.accent)
-                        .frame(width: 39, height: 39, alignment: .leading)
-                    Spacer(minLength: 0)
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(palette.muted)
-                }
-                Spacer(minLength: 0)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(title).font(.system(size: 16, weight: .semibold)).lineLimit(2)
-                    Text(detail).font(.subheadline).foregroundStyle(palette.muted).lineLimit(1)
-                }
-            }
-            .padding(15)
-            .frame(maxWidth: .infinity, minHeight: 129, alignment: .leading)
-            .nexusPanel(palette, highlighted: highlighted)
-            .contentShape(.rect(cornerRadius: 19))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityHint(detail)
-    }
-
     private func empty(_ text: String) -> some View {
         Text(text).foregroundStyle(palette.muted).fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder
-    private func receivedByDate(_ files: [ReceivedFile], empty hint: String) -> some View {
+    private func receivedGallery(_ files: [ReceivedFile], empty hint: String, scanActions: Bool = false) -> some View {
         if files.isEmpty {
             empty(hint)
         } else {
@@ -599,15 +1507,38 @@ struct Dashboard: View {
                 if libraryGrouping != .none {
                     LibraryDateHeading(date: group.date, grouping: libraryGrouping)
                 }
-                ForEach(group.items) { fileRow($0) }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 12)], spacing: 16) {
+                    ForEach(group.items) { item in
+                        let available = FileManager.default.fileExists(atPath: item.url.path)
+                        Button { preview = item.url } label: {
+                            ReceivedTile(item: item, palette: palette)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!available)
+                        .help(item.offer.name)
+                        .contextMenu {
+                            Button("Visualizar") { preview = item.url }
+                            Button("Mostrar no Finder") {
+                                NSWorkspace.shared.activateFileViewerSelecting([item.url])
+                            }
+                            ShareLink(item: item.url)
+                            if scanActions { scanFileActions(item) }
+                        }
+                        .onDrag { NSItemProvider(contentsOf: item.url) ?? NSItemProvider() }
+                    }
+                }
             }
         }
     }
 
     @ViewBuilder
-    private func recent(_ files: [ReceivedFile], empty hint: String) -> some View {
-        if files.isEmpty { empty(hint) }
-        ForEach(files.prefix(3)) { fileRow($0) }
+    private func scanFileActions(_ item: ReceivedFile) -> some View {
+        Button("Copiar") {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.writeObjects([item.url as NSURL])
+        }
+        Button("Excluir…", role: .destructive) { pendingScanDeletion = item }
     }
 
     private func fileRow(_ item: ReceivedFile) -> some View {
@@ -616,6 +1547,7 @@ struct Dashboard: View {
                 .lineLimit(1)
             Spacer()
             Button("Visualizar") { preview = item.url }
+            scanFileActions(item)
             if model.section != .overview {
                 Button { NSWorkspace.shared.activateFileViewerSelecting([item.url]) } label: {
                     Image(systemName: "folder").accessibilityLabel("Mostrar no Finder")
@@ -625,6 +1557,43 @@ struct Dashboard: View {
         }.onDrag { NSItemProvider(contentsOf: item.url) ?? NSItemProvider() }
     }
 
+}
+
+private struct ReceivedTile: View {
+    let item: ReceivedFile
+    let palette: NexusPalette
+    @State private var thumbnail: NSImage?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(palette.accentSurface)
+                .aspectRatio(1, contentMode: .fit)
+                .overlay {
+                    GeometryReader { canvas in
+                        if let thumbnail {
+                            Image(nsImage: thumbnail).resizable().scaledToFit()
+                                .frame(width: canvas.size.width, height: canvas.size.height)
+                        } else {
+                            Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path))
+                                .resizable().scaledToFit().frame(width: 48, height: 48)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                    }
+                }
+                .clipShape(.rect(cornerRadius: 10))
+                .accessibilityHidden(true)
+            Text(item.offer.name).font(.subheadline.weight(.medium))
+                .lineLimit(1).truncationMode(.middle)
+        }
+        .task(id: item.url) {
+            // Ask Quick Look for a bounded thumbnail instead of loading the original.
+            let request = QLThumbnailGenerator.Request(fileAt: item.url, size: CGSize(width: 256, height: 256),
+                                                       scale: 2, representationTypes: .thumbnail)
+            let result = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)
+            if !Task.isCancelled { thumbnail = result?.nsImage }
+        }
+    }
 }
 
 struct FilePreview: NSViewRepresentable {

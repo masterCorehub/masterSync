@@ -1,31 +1,35 @@
 import SwiftUI
 
 private enum SectionGroup: String, CaseIterable {
-    case home = "Início"
-    case library = "Biblioteca"
+    case home = "Celular"
+    case conversation = "Conversa"
+    case library = "Galeria"
     case connection = "Conexão"
 
     var sections: [Section] {
         switch self {
-        case .home: [.overview, .clipboard]
+        case .home: [.overview]
+        case .conversation: [.conversation]
         case .library: [.gallery, .documents, .files]
-        case .connection: [.devices, .remote, .notifications, .settings]
+        case .connection: [.devices, .settings]
         }
     }
 
     var icon: String {
         switch self {
-        case .home: "house"
-        case .library: "square.stack"
+        case .home: "iphone"
+        case .conversation: "bubble.left.and.bubble.right"
+        case .library: "photo.on.rectangle"
         case .connection: "link"
         }
     }
 
     init(section: Section) {
         switch section {
-        case .overview, .clipboard: self = .home
+        case .conversation: self = .conversation
+        case .overview, .clipboard, .notifications, .remote: self = .home
         case .gallery, .documents, .files: self = .library
-        case .devices, .remote, .notifications, .settings: self = .connection
+        case .devices, .settings: self = .connection
         }
     }
 }
@@ -33,8 +37,8 @@ private enum SectionGroup: String, CaseIterable {
 struct DashboardHeader: View {
     @ObservedObject var model: NexusModel
     @ObservedObject var gallery: GalleryModel
+    var notificationButton: AnyView
     @Environment(\.colorScheme) private var scheme
-    @State private var showingSearch = false
     @State private var showingActions = false
     @State private var lastSection: [SectionGroup: Section] = [:]
 
@@ -46,26 +50,33 @@ struct DashboardHeader: View {
         VStack(alignment: .leading, spacing: 17) {
             HStack(spacing: 15) {
                 wordmark
-                Spacer(minLength: 2)
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 groups
-                Spacer(minLength: 2)
-                search
-                actions
+                    .fixedSize()
+                // Equal side widths keep the tabs centered when search appears.
+                HStack(spacing: 15) {
+                    if hasGallerySearch { search }
+                    notificationButton
+                    actions
+                }
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
             }
-            HStack(spacing: 8) {
-                ForEach(group.sections) { section in
-                    Button { model.section = section } label: {
-                        Label(section.rawValue, systemImage: section.icon)
-                            .lineLimit(1).fixedSize()
+            if group == .library {
+                HStack(spacing: 8) {
+                    ForEach(group.sections) { section in
+                        Button { model.section = section } label: {
+                            Label(section.rawValue, systemImage: section.icon)
+                                .lineLimit(1).fixedSize()
+                        }
+                        .buttonStyle(NexusPillStyle(selected: model.section == section, compact: true))
+                        .accessibilityAddTraits(model.section == section ? .isSelected : [])
                     }
-                    .buttonStyle(NexusPillStyle(selected: model.section == section, compact: true))
-                    .accessibilityAddTraits(model.section == section ? .isSelected : [])
                 }
             }
         }
         .onChange(of: model.section) {
             // Returning to a group restores the last section the user opened there.
-            lastSection[SectionGroup(section: model.section)] = model.section
+            if SectionGroup(section: model.section) == .library { lastSection[.library] = model.section }
         }
     }
 
@@ -76,23 +87,18 @@ struct DashboardHeader: View {
                 .foregroundStyle(palette.accent)
                 .frame(width: 35, height: 35)
                 .background(palette.accentSurface, in: RoundedRectangle(cornerRadius: 11))
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Nexus").font(.system(size: 20, weight: .bold, design: .rounded))
-                    .tracking(-0.4)
-                    .foregroundStyle(palette.accent)
-                Text("masterSync").font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(palette.muted)
-            }.fixedSize()
+            Text("MasterSync").font(.system(size: 20, weight: .bold, design: .rounded))
+                .tracking(-0.4).foregroundStyle(palette.accent).fixedSize()
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Nexus masterSync")
+        .accessibilityLabel("MasterSync")
     }
 
     private var groups: some View {
         HStack(spacing: 4) {
-            ForEach(SectionGroup.allCases, id: \.self) { item in
+            ForEach([SectionGroup.home, .conversation, .library], id: \.self) { item in
                 Button {
-                    if item != group, let section = lastSection[item] ?? item.sections.first { model.section = section }
+                    if let section = lastSection[item] ?? item.sections.first { model.section = section }
                 } label: {
                     Label(item.rawValue, systemImage: item.icon).fixedSize()
                 }
@@ -105,53 +111,39 @@ struct DashboardHeader: View {
     }
 
     private var search: some View {
-        Group {
-            if hasGallerySearch {
-                HStack(spacing: 9) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(palette.muted)
-                    TextField("Buscar na galeria", text: $gallery.filters.name)
-                        .textFieldStyle(.plain)
-                    if !gallery.filters.name.isEmpty {
-                        Button { gallery.filters.name = "" } label: {
-                            Image(systemName: "xmark.circle.fill")
-                        }.buttonStyle(.plain).accessibilityLabel("Limpar busca")
-                    }
-                }
-                .padding(.horizontal, 13)
-                .frame(height: 36)
-                .background(palette.control, in: Capsule())
-            } else {
-                Button { showingSearch = true } label: {
-                    HStack(spacing: 9) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(palette.muted)
-                        Text("Buscar seção").lineLimit(1)
-                        Spacer(minLength: 0)
-                    }
-                }.buttonStyle(NexusPillStyle())
-                    .popover(isPresented: $showingSearch, arrowEdge: .bottom) {
-                        SectionSearch { section in
-                            model.section = section
-                            showingSearch = false
-                        }
-                    }
+        HStack(spacing: 9) {
+            Image(systemName: "magnifyingglass").foregroundStyle(palette.muted)
+            TextField("Buscar na galeria", text: $gallery.filters.name)
+                .textFieldStyle(.plain)
+            if !gallery.filters.name.isEmpty {
+                Button { gallery.filters.name = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }.buttonStyle(.plain).accessibilityLabel("Limpar busca")
             }
-        }.frame(minWidth: 118, idealWidth: 178, maxWidth: 210)
+        }
+        .padding(.horizontal, 13)
+        .frame(minWidth: 0, maxWidth: 210)
+        .frame(height: 36)
+        .background(palette.control, in: Capsule())
     }
 
     private var actions: some View {
         Button { showingActions = true } label: {
-            Image(systemName: "ellipsis").font(.system(size: 14, weight: .bold))
+            Image(systemName: "gearshape").font(.system(size: 14, weight: .bold))
                 .frame(width: 36, height: 36)
                 .background(palette.control, in: Circle())
                 .contentShape(.circle)
         }
         .buttonStyle(.plain)
         .fixedSize()
-        .accessibilityLabel("Mais opções")
+        .accessibilityLabel("Configurações e dispositivos")
         .popover(isPresented: $showingActions, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 9) {
                 action("Dispositivos", icon: Section.devices.icon) { model.section = .devices }
                 action("Configurações", icon: Section.settings.icon) { model.section = .settings }
+                Divider()
+                action("Área de transferência", icon: Section.clipboard.icon) { model.section = .clipboard }
+                action("Controle em janela separada", icon: "macwindow") { model.section = .remote }
                 if model.screen.sharing {
                     Divider()
                     action("Parar espelhamento", icon: "stop.circle") { model.screen.end() }
@@ -170,36 +162,6 @@ struct DashboardHeader: View {
             Label(title, systemImage: icon)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }.buttonStyle(.borderless)
-    }
-}
-
-private struct SectionSearch: View {
-    var open: (Section) -> Void
-    @State private var query = ""
-    @FocusState private var focused: Bool
-
-    private var matches: [Section] {
-        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return term.isEmpty ? Section.allCases : Section.allCases.filter { $0.rawValue.localizedStandardContains(term) }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            TextField("Buscar seção", text: $query)
-                .textFieldStyle(.roundedBorder)
-                .focused($focused)
-                .onSubmit { if let first = matches.first { open(first) } }
-            if matches.isEmpty { Text("Nenhuma seção encontrada.").foregroundStyle(.secondary) }
-            ForEach(matches) { section in
-                Button { open(section) } label: {
-                    Label(section.rawValue, systemImage: section.icon)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }.buttonStyle(.borderless).controlSize(.large)
-            }
-        }
-        .padding(14)
-        .frame(width: 235)
-        .onAppear { focused = true }
     }
 }
 

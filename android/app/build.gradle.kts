@@ -12,8 +12,8 @@ android {
         applicationId = "com.nexus.mastersync"
         minSdk = 29
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.2.4"
+        versionCode = 14
+        versionName = "0.2.12"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     flavorDimensions += "distribution"

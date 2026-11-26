@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
@@ -19,7 +20,9 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
@@ -29,7 +32,9 @@ import com.nexus.mastersync.services.ConnectionService
 import com.nexus.mastersync.services.ScanLibrary
 import com.nexus.mastersync.services.ScreenMirrorService
 import com.nexus.mastersync.protocol.Wire
+import com.nexus.mastersync.ui.NexusActions
 import com.nexus.mastersync.ui.NexusScreen
+import com.nexus.mastersync.ui.features.FeatureId
 import com.nexus.mastersync.ui.Tab
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -39,12 +44,15 @@ class MainActivity : ComponentActivity() {
     private val nexus get() = (application as NexusApplication).nexus
     private val library get() = nexus.scans
     private val tab = mutableStateOf(Tab.Home)
+    private val openFeature = mutableStateOf<FeatureId?>(null)
     private val shared = mutableStateOf<Uri?>(null)
     private val documents = mutableStateOf<List<ScanLibrary.Document>>(emptyList())
     private val busy = mutableStateOf(false)
     private val recognized = mutableStateOf<String?>(null)
     private var scanPeer: String? = null
+    private var scanRequestID: String? = null
     private var captureId: String? = null
+    private var photoCapture: NexusController.CameraRequest? = null
     private var advancedScanPending = false
     private var screenRequest: NexusController.MirrorRequest? = null
     private var exportTask: Pair<File, Boolean>? = null
@@ -56,8 +64,8 @@ class MainActivity : ComponentActivity() {
     private val camera = registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
         if (allowed) launchQr() else nexus.note("Permita a câmera para ler o QR.")
     }
-    private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
-        if (allowed) startConnection() else nexus.note("Permita notificações para ver quando a conexão está ativa.")
+    private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        startConnection()
     }
     private val screenNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
         if (allowed) approveScreen() else {
@@ -104,6 +112,62 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val instantCamera = registerForActivityResult(object : ActivityResultContracts.TakePicture() {
+        override fun createIntent(context: Context, input: Uri): Intent = super.createIntent(context, input).apply {
+            clipData = ClipData.newRawUri("Foto instantânea", input)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+    }) { taken ->
+        val request = photoCapture ?: return@registerForActivityResult
+        val file = captureFile(request.id)
+        photoCapture = null
+        if (!taken || !file.isFile || file.length() == 0L) {
+            file.delete()
+            nexus.photoStatus(request, "Foto cancelada no Android.")
+            nexus.finishPhoto(request)
+        } else if (nexus.client.status.value.connected?.id != request.peer ||
+            !nexus.options.value.files || !nexus.permissions.value.files) {
+            file.delete()
+            nexus.photoStatus(request, "O Mac não está disponível para receber a foto.")
+            nexus.finishPhoto(request)
+        } else {
+            nexus.photoStatus(request, "Enviando foto…", finished = false)
+            val name = "Foto instantânea ${java.text.SimpleDateFormat("yyyy-MM-dd HH-mm-ss", java.util.Locale.ROOT).format(java.util.Date())}.jpg"
+            nexus.transfers.offerFile(file, request.peer, name, "image/jpeg", transferId = request.id) {
+                nexus.photoStatus(request, it)
+            }.invokeOnCompletion { file.delete() }
+            nexus.finishPhoto(request)
+        }
+    }
+    private val instantCameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+        if (allowed) launchInstantCamera() else failInstantCamera("Permita o uso da câmera para tirar a foto.")
+    }
+
+    private fun approveInstantCamera() {
+        if (busy.value || photoCapture != null) return
+        photoCapture = nexus.decidePhoto(true) ?: return
+        if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) launchInstantCamera()
+        else instantCameraPermission.launch(Manifest.permission.CAMERA)
+    }
+
+    private fun launchInstantCamera() {
+        val request = photoCapture ?: return
+        runCatching {
+            val file = captureFile(request.id)
+            file.parentFile?.mkdirs()
+            check(file.createNewFile())
+            instantCamera.launch(FileProvider.getUriForFile(this, "$packageName.scan-capture", file))
+        }.onFailure { failInstantCamera("Não foi possível abrir a câmera do Android.") }
+    }
+
+    private fun failInstantCamera(message: String) {
+        val request = photoCapture ?: return
+        captureFile(request.id).delete()
+        photoCapture = null
+        nexus.photoStatus(request, message)
+        nexus.finishPhoto(request)
+    }
+
     private val documentCamera = registerForActivityResult(object : ActivityResultContracts.TakePicture() {
         override fun createIntent(context: Context, input: Uri): Intent = super.createIntent(context, input).apply {
             // Grant the camera only the URI of the temporary photo it writes.
@@ -141,39 +205,44 @@ class MainActivity : ComponentActivity() {
             screenRequest = NexusController.MirrorRequest(it, savedInstanceState.getString("screen-id").orEmpty(), savedInstanceState.getInt("screen-size"),
                 savedInstanceState.getInt("screen-fps"), savedInstanceState.getInt("screen-quality"))
         }
+        savedInstanceState?.getString("photo-peer")?.let { peer ->
+            savedInstanceState.getString("photo-id")?.takeIf(Wire::validID)?.let {
+                photoCapture = NexusController.CameraRequest(peer, it)
+            }
+        }
         scanPeer = savedInstanceState?.getString("scan-peer")
+        scanRequestID = savedInstanceState?.getString("scan-request-id")?.takeIf(Wire::validID)
         captureId = savedInstanceState?.getString("scan-capture")?.takeIf(Wire::validID)
         advancedScanPending = savedInstanceState?.getBoolean("scan-advanced") == true
         busy.value = captureId != null || advancedScanPending
-        savedInstanceState?.getString("tab")?.let { name -> Tab.entries.firstOrNull { it.name == name }?.let { tab.value = it } }
+        tab.value = Tab.restore(savedInstanceState?.getString("tab"))
         savedInstanceState?.getString("export-file")?.let { exportTask = File(it) to savedInstanceState.getBoolean("export-png") }
         handle(intent)
         lifecycleScope.launch { documents.value = library.list() }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                nexus.client.status.collect { status ->
+                    if (status.connected != null) startConnection()
+                }
+            }
+        }
         setContent {
             NexusScreen(
-                nexus = nexus, tab = tab.value, navigate = { tab.value = it },
+                nexus = nexus, actions = actions, tab = tab.value, navigate = { tab.value = it },
+                openFeature = openFeature.value, setOpenFeature = { openFeature.value = it },
                 shared = shared.value, clearShared = { shared.value = null },
-                onQr = ::readQr, onChoose = { chooseFile.launch(arrayOf("*/*")) },
-                onConnection = ::toggleConnection, onNotificationSettings = ::notificationAccess,
-                onGalleryAccess = ::requestGallery, onApproveScreen = ::requestScreen,
-                onKeyboardSettings = { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
-                onChooseKeyboard = { getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
-                onScan = { openDocumentCamera() }, onAdvancedScan = { openScanner() },
-                onAcceptScan = { advanced ->
-                    nexus.decideScan(true)?.let { peer ->
-                        if (advanced) openScanner(peer) else openDocumentCamera(peer)
-                    }
-                },
-                documents = documents.value, scannerBusy = busy.value, recognized = recognized.value,
-                onOCR = ::recognize, onDismissOCR = { recognized.value = null },
-                onSendDocument = { document -> nexus.client.status.value.connected?.id?.let { sendDocument(document, it) } },
-                onExport = ::export
+                documents = documents.value, scannerBusy = busy.value, recognized = recognized.value
             )
         }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        photoCapture?.let {
+            outState.putString("photo-peer", it.peer)
+            outState.putString("photo-id", it.id)
+        }
         outState.putString("scan-peer", scanPeer)
+        outState.putString("scan-request-id", scanRequestID)
         outState.putString("scan-capture", captureId)
         outState.putBoolean("scan-advanced", advancedScanPending)
         screenRequest?.let {
@@ -197,7 +266,11 @@ class MainActivity : ComponentActivity() {
         handle(intent)
     }
 
-    override fun onStart() { super.onStart(); nexus.setVisible(true) }
+    override fun onStart() {
+        super.onStart()
+        nexus.setVisible(true)
+        if (nexus.client.selectedAuthorizedMac() != null) startConnection()
+    }
     override fun onResume() { super.onResume(); nexus.refreshPermissions() }
     override fun onStop() { nexus.setVisible(false); super.onStop() }
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -211,9 +284,36 @@ class MainActivity : ComponentActivity() {
             val stream: Uri? = if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
                 else intent.getParcelableExtra(Intent.EXTRA_STREAM)
             shared.value = stream?.takeIf { it.scheme == "content" }
-            tab.value = Tab.Share
-        } else if (intent.getBooleanExtra("open-share", false)) tab.value = Tab.Share
-        else if (intent.getBooleanExtra("open-scan", false)) tab.value = Tab.Scan
+            tab.value = Tab.Conversation
+        } else if (intent.getBooleanExtra("open-share", false)) tab.value = Tab.Conversation
+        else if (intent.getBooleanExtra("open-scan", false)) {
+            tab.value = Tab.Home
+            openFeature.value = FeatureId.Scan
+        }
+    }
+
+    private val actions by lazy {
+        NexusActions(
+            readQr = ::readQr, chooseFile = { chooseFile.launch(arrayOf("*/*")) },
+            toggleBackground = ::toggleConnection, openNotificationAccess = ::notificationAccess,
+            openDndAccess = { startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) },
+            openAppSettings = {
+                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+            },
+            requestGallery = ::requestGallery, approvePhoto = ::approveInstantCamera, approveScreen = ::requestScreen,
+            keyboardSettings = { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
+            chooseKeyboard = { getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
+            scan = { openDocumentCamera() }, advancedScan = { openScanner() },
+            acceptScan = { advanced ->
+                nexus.decideScan(true)?.let { request ->
+                    if (advanced) openScanner(request.peer, request.id)
+                    else openDocumentCamera(request.peer, request.id)
+                }
+            },
+            ocr = ::recognize, dismissOcr = { recognized.value = null },
+            sendDocument = { document -> nexus.client.status.value.connected?.id?.let { sendDocument(document, it) } },
+            export = ::export
+        )
     }
 
     private fun readQr() {
@@ -226,19 +326,24 @@ class MainActivity : ComponentActivity() {
         .setPrompt("Aponte para o código no Mac.").setBeepEnabled(false).setOrientationLocked(false))
 
     private fun toggleConnection() {
-        if (nexus.background.value) stopService(Intent(this, ConnectionService::class.java))
-        else if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        if (nexus.background.value) {
+            nexus.requestBackgroundConnection(false)
+            stopService(Intent(this, ConnectionService::class.java))
+            return
+        }
+        nexus.requestBackgroundConnection(true)
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else startConnection()
     }
 
     private fun startConnection() {
-        if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
-            nexus.note("Ative notificações nos Ajustes do Android para manter uma conexão visível.")
-            return
-        }
+        if (!nexus.beginBackgroundStart()) return
         runCatching { startForegroundService(Intent(this, ConnectionService::class.java)) }
-            .onFailure { nexus.note("O Android não permitiu iniciar a conexão em segundo plano.") }
+            .onFailure {
+                nexus.setBackground(false)
+                nexus.note("O Android não permitiu iniciar a conexão em segundo plano.")
+            }
     }
 
     private fun requestScreen() {
@@ -254,7 +359,11 @@ class MainActivity : ComponentActivity() {
     private fun approveScreen() {
         val request = nexus.decideMirror(true) ?: return
         screenRequest = request
-        screenConsent.launch(getSystemService(MediaProjectionManager::class.java).createScreenCaptureIntent())
+        val manager = getSystemService(MediaProjectionManager::class.java)
+        val intent = if (Build.VERSION.SDK_INT >= 34) {
+            manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+        } else manager.createScreenCaptureIntent()
+        screenConsent.launch(intent)
     }
 
     private fun requestGallery() {
@@ -269,11 +378,12 @@ class MainActivity : ComponentActivity() {
 
     private fun notificationAccess() = startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
 
-    private fun openDocumentCamera(authorizedPeer: String? = null) {
+    private fun openDocumentCamera(authorizedPeer: String? = null, requestID: String? = null) {
         if (busy.value) return
-        tab.value = Tab.Scan
+        openFeature.value = FeatureId.Scan
         nexus.note("")
         scanPeer = nexus.scanDestination(authorizedPeer)
+        scanRequestID = requestID
         captureId = Wire.id()
         busy.value = true
         if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) launchDocumentCamera()
@@ -293,10 +403,11 @@ class MainActivity : ComponentActivity() {
         }.onFailure { failScan("Não foi possível abrir a câmera. Verifique se há um app de câmera disponível.") }
     }
 
-    private fun openScanner(authorizedPeer: String? = null) {
+    private fun openScanner(authorizedPeer: String? = null, requestID: String? = null) {
         if (busy.value) return
         nexus.note("")
         scanPeer = nexus.scanDestination(authorizedPeer)
+        scanRequestID = requestID
         val options = GmsDocumentScannerOptions.Builder()
             .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
             .setGalleryImportAllowed(true).setPageLimit(20)
@@ -314,18 +425,20 @@ class MainActivity : ComponentActivity() {
 
     private fun finishScan(pdf: Uri?, pages: List<Uri>, capture: File? = null) {
         val peer = scanPeer
+        val requestID = scanRequestID
         scanPeer = null
+        scanRequestID = null
         advancedScanPending = false
         busy.value = true
         nexus.note("Salvando digitalização…")
         lifecycleScope.launch {
             try {
-                nexus.saveScan(pdf, pages, peer, capture)
+                nexus.saveScan(pdf, pages, peer, capture, requestID)
                 documents.value = library.list()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                showScanIssue(error.localizedMessage ?: "Falha ao salvar a digitalização. Tente fotografar novamente.", peer)
+                showScanIssue(error.localizedMessage ?: "Falha ao salvar a digitalização. Tente fotografar novamente.", peer, requestID)
             } finally { busy.value = false }
         }
     }
@@ -335,13 +448,18 @@ class MainActivity : ComponentActivity() {
         captureId = null
         advancedScanPending = false
         busy.value = false
-        showScanIssue(message, scanPeer)
+        showScanIssue(message, scanPeer, scanRequestID)
         scanPeer = null
+        scanRequestID = null
     }
 
-    private fun showScanIssue(message: String, peer: String?) {
+    private fun showScanIssue(message: String, peer: String?, requestID: String? = null) {
         nexus.note(message)
-        if (peer != null) nexus.client.sendTo(peer, Wire.message("scanStatus").put("message", message.take(130)))
+        if (peer != null) {
+            val status = Wire.message("scanStatus").put("message", message.take(130))
+            requestID?.let { status.put("id", it).put("more", false) }
+            nexus.client.sendTo(peer, status)
+        }
     }
 
     private fun recognize(document: ScanLibrary.Document) {

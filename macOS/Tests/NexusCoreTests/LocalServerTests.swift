@@ -6,6 +6,28 @@ import XCTest
 @testable import NexusCore
 
 final class LocalServerTests: XCTestCase {
+    func testTemporaryNetworkCanInviteWithoutKeychain() throws {
+        let original = try LocalServer.temporary()
+        let replacement = try LocalServer.temporary()
+        defer { original.stop(); replacement.stop() }
+        let listening = expectation(description: "temporary listener opens")
+        listening.expectedFulfillmentCount = 2
+        for server in [original, replacement] {
+            server.onUpdate = {
+                guard server.port != nil else { return }
+                server.onUpdate = nil
+                listening.fulfill()
+            }
+            server.start(port: 0, advertise: false)
+        }
+        wait(for: [listening], timeout: 8)
+        let first = try original.invite(host: "127.0.0.1")
+        let second = try replacement.invite(host: "127.0.0.1")
+        XCTAssertNotEqual(first.serverId, second.serverId)
+        XCTAssertNotEqual(first.pin, second.pin)
+        XCTAssertTrue(replacement.peers.isEmpty)
+    }
+
     func testListenerUsesAnAvailablePortWhenRequestedPortIsTaken() throws {
         let identity = try TLSIdentity.ephemeral()
         let original = LocalServer(identity: identity, id: Wire.id(), name: "Original", peers: []) { _ in }

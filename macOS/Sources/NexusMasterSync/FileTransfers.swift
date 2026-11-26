@@ -3,7 +3,7 @@ import Foundation
 import NexusCore
 import UniformTypeIdentifiers
 
-struct ReceivedFile: Identifiable {
+struct ReceivedFile: Identifiable, Codable {
     let peerID: String
     let offer: FileOffer
     let url: URL
@@ -39,12 +39,15 @@ final class FileTransfers: ObservableObject {
 
     @Published private(set) var progress: [Progress] = []
     @Published private(set) var received: [ReceivedFile] = []
+    @Published private(set) var sent: [ReceivedFile] = []
+    private var sentHistoryURL: URL { storage.appendingPathComponent("sent-history.json") }
     @Published private(set) var feedback: String?
     var didReceive: ((ReceivedFile) -> Void)?
     var didFail: ((String, String, String) -> Void)?
     private var outgoing: [String: Outgoing] = [:]
     private var incoming: [String: Incoming] = [:]
-    private var preparing: Set<String> = []
+    private var preparing: [String: UUID] = [:]
+    @Published private(set) var queued: [String: [URL]] = [:]
     private var verifies: Set<String> = []
     private var allowed: Set<String> = []
     private let storage: URL
@@ -54,30 +57,69 @@ final class FileTransfers: ObservableObject {
         self.storage = storage
         self.send = send
         refreshReceived()
+        if let data = try? Data(contentsOf: sentHistoryURL),
+           let history = try? JSONDecoder().decode([ReceivedFile].self, from: data) {
+            sent = history
+        }
     }
 
     func allow(_ peer: String) {
-        if allowed.insert(peer).inserted, let out = outgoing[peer] {
+        guard allowed.insert(peer).inserted else { return }
+        if let out = outgoing[peer] {
+            update(out.offer, peer: peer, sending: true, offset: 0)
             send(peer, out.offer.message)
+        } else {
+            sendNext(to: peer)
         }
     }
 
     func disconnect(_ peer: String, discardOutgoing: Bool = false) {
         allowed.remove(peer)
         incoming[peer] = nil
-        if discardOutgoing { outgoing[peer] = nil }
+        if discardOutgoing {
+            outgoing[peer] = nil
+            queued[peer] = nil
+            preparing[peer] = nil
+        }
         progress.removeAll { $0.peer == peer }
     }
 
     func offer(_ file: URL, to peer: String) {
-        guard allowed.contains(peer) else { feedback = "Ative arquivos nos dois dispositivos."; return }
-        guard outgoing[peer] == nil, preparing.insert(peer).inserted else {
+        guard outgoing[peer] == nil, preparing[peer] == nil, queued[peer]?.isEmpty != false else {
             feedback = "Já existe um envio para este dispositivo."
             return
         }
+        _ = offerBatch([file], to: peer)
+    }
+
+    func offerBatch(_ urls: [URL], to peer: String) -> Bool {
+        guard allowed.contains(peer) else {
+            feedback = "Ative arquivos nos dois dispositivos."
+            return false
+        }
+        let files = urls.filter(\.isFileURL)
+        guard !files.isEmpty else { return false }
+        queued[peer, default: []].append(contentsOf: files)
+        sendNext(to: peer)
+        return true
+    }
+
+    private func sendNext(to peer: String) {
+        guard allowed.contains(peer), outgoing[peer] == nil, preparing[peer] == nil,
+              var files = queued[peer], !files.isEmpty else { return }
+        let file = files.removeFirst()
+        queued[peer] = files.isEmpty ? nil : files
+        // Keep the preparation bound to this peer, even if authorization is revoked mid-read.
+        let attempt = UUID()
+        preparing[peer] = attempt
         feedback = "Preparando \(file.lastPathComponent)…"
         Task {
-            defer { preparing.remove(peer) }
+            defer {
+                if preparing[peer] == attempt {
+                    preparing[peer] = nil
+                    sendNext(to: peer)
+                }
+            }
             do {
                 let offer = try await Task.detached(priority: .utility) {
                     let access = file.startAccessingSecurityScopedResource()
@@ -90,11 +132,16 @@ final class FileTransfers: ObservableObject {
                                      mime: values.contentType?.preferredMIMEType ?? "application/octet-stream",
                                      size: Int64(bytes), hash: try FileOffer.hash(file))
                 }.value
+                guard preparing[peer] == attempt else { return }
                 outgoing[peer] = Outgoing(file: file, offer: offer)
-                update(offer, peer: peer, sending: true, offset: 0)
-                if allowed.contains(peer) { send(peer, offer.message) }
+                if allowed.contains(peer) {
+                    update(offer, peer: peer, sending: true, offset: 0)
+                    send(peer, offer.message)
+                }
                 feedback = nil
-            } catch { feedback = error.localizedDescription }
+            } catch {
+                if preparing[peer] == attempt { feedback = error.localizedDescription }
+            }
         }
     }
 
@@ -122,13 +169,24 @@ final class FileTransfers: ObservableObject {
             case "fileComplete":
                 guard let record = outgoing[peer], record.offer.id == id else { return }
                 outgoing[peer] = nil
+                defer { sendNext(to: peer) }
                 removeProgress(id, peer)
+                // Only the receiver's completion message confirms a successful send.
+                sent.insert(ReceivedFile(peerID: peer, offer: record.offer, url: record.file, date: .now), at: 0)
                 feedback = "\(record.offer.name) enviado."
+                do {
+                    try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true,
+                                                            attributes: [.posixPermissions: 0o700])
+                    try JSONEncoder().encode(sent).write(to: sentHistoryURL, options: .atomic)
+                } catch {
+                    feedback = "Arquivo enviado. Não foi possível salvar o histórico."
+                }
             case "fileError":
                 clear(id, peer)
                 let reason = Wire.visible(message.message ?? "A transferência falhou.", limit: 150)
                 feedback = reason
                 didFail?(id, peer, reason)
+                sendNext(to: peer)
             default: break
             }
         } catch {
@@ -273,10 +331,23 @@ final class FileTransfers: ObservableObject {
         var message = reply("fileError", id)
         message.message = text
         send(peer, message)
+        sendNext(to: peer)
     }
 
     private func reportReceived(_ id: String, peer: String) {
         if let file = received.first(where: { $0.peerID == peer && $0.offer.id == id }) { didReceive?(file) }
+    }
+
+    func trashReceived(_ id: String) {
+        guard let item = received.first(where: { $0.id == id }) else { return }
+        do {
+            // Trash only the indexed payload, never the transfer directory.
+            try FileManager.default.trashItem(at: item.url, resultingItemURL: nil)
+            refreshReceived()
+            feedback = nil
+        } catch {
+            feedback = "Não foi possível mover o arquivo para o Lixo: \(error.localizedDescription)"
+        }
     }
 
     private func refreshReceived() {

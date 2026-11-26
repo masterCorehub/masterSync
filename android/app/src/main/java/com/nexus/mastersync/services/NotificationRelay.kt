@@ -6,5 +6,6 @@ import org.json.JSONObject
 interface NotificationRelay {
     fun refresh()
     fun receive(data: JSONObject)
+    fun mediaStatus(): JSONObject?
     fun media(command: String): String
 }

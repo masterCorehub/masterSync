@@ -7,12 +7,36 @@ struct GalleryBrowser: View {
     @ObservedObject var files: FileTransfers
     let canTransfer: Bool
     @Binding var grouping: LibraryDateGrouping
+    let deviceID: String
+    @AppStorage("media-favorites") private var storedFavorites = Data()
+    @State private var favoritesOnly = false
+    @State private var showFilters = false
     @Environment(\.calendar) private var calendar
     @Environment(\.colorScheme) private var scheme
 
     private var palette: NexusPalette { NexusPalette(scheme: scheme) }
     private var effectiveGrouping: LibraryDateGrouping { gallery.filters.order == .name ? .none : grouping }
-    private let columns = [GridItem(.adaptive(minimum: 171), spacing: 12)]
+    private let columns = [GridItem(.adaptive(minimum: 140), spacing: 8)]
+
+    private var favorites: [String: [MediaEntry]] {
+        (try? JSONDecoder().decode([String: [MediaEntry]].self, from: storedFavorites)) ?? [:]
+    }
+
+    private var visibleItems: [MediaEntry] {
+        favoritesOnly ? (favorites[deviceID] ?? []).sorted { $0.at > $1.at } : gallery.items
+    }
+
+    private func toggleFavorite(_ item: MediaEntry) {
+        var saved = favorites
+        var items = saved[deviceID] ?? []
+        if let index = items.firstIndex(where: { $0.id == item.id }) {
+            items.remove(at: index)
+        } else {
+            items.append(item)
+        }
+        saved[deviceID] = items
+        if let data = try? JSONEncoder().encode(saved) { storedFavorites = data }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
@@ -20,56 +44,30 @@ struct GalleryBrowser: View {
                 mediaFilter("Tudo", icon: "square.grid.2x2", value: "")
                 mediaFilter("Fotos", icon: "photo", value: "image")
                 mediaFilter("Vídeos", icon: "play.rectangle", value: "video")
-                Spacer(minLength: 8)
-                Picker("Álbum", selection: $gallery.filters.album) {
-                    Text("Todos os álbuns").tag("")
-                    ForEach(gallery.albums) { Text($0.name).tag($0.id) }
+                Button { favoritesOnly = true } label: {
+                    Label("Favoritos", systemImage: "star")
                 }
-                .frame(maxWidth: 235)
+                .buttonStyle(NexusPillStyle(selected: favoritesOnly, compact: true))
+                .accessibilityAddTraits(favoritesOnly ? .isSelected : [])
+                Spacer(minLength: 8)
+                Button { showFilters.toggle() } label: {
+                    Label("Filtros", systemImage: "line.3.horizontal.decrease")
+                }
+                .buttonStyle(NexusPillStyle(compact: true))
+                .popover(isPresented: $showFilters) { filterOptions }
                 Button { gallery.refresh() } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(NexusPillStyle(compact: true))
                     .accessibilityLabel("Atualizar galeria").help("Atualizar galeria")
             }
 
-            if gallery.advanced {
-                HStack {
-                    Picker("Adicionado em", selection: $gallery.filters.period) {
-                        ForEach(GalleryModel.Filters.Period.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    Picker("Ordenar", selection: $gallery.filters.order) {
-                        ForEach(GalleryModel.Filters.Order.allCases, id: \.self) { Text($0.title).tag($0) }
-                    }
-                    LibraryDatePicker(selection: $grouping)
-                        .disabled(gallery.filters.order == .name)
-                        .help("Para agrupar por data, ordene pelos mais recentes ou mais antigos.")
-                }
-                if gallery.filters.period == .custom {
-                    HStack {
-                        DatePicker("De", selection: $gallery.filters.start, in: ...gallery.filters.end, displayedComponents: .date)
-                        DatePicker("Até", selection: $gallery.filters.end, in: gallery.filters.start..., displayedComponents: .date)
-                    }
-                }
-                if gallery.backgroundConnection {
-                    Label("Conexão em segundo plano ativa no Android", systemImage: "iphone")
-                        .font(.caption).foregroundStyle(palette.muted)
-                } else {
-                    Text("Para continuar com a tela bloqueada, ative Manter conexão em segundo plano no Android.")
-                        .font(.caption).foregroundStyle(palette.muted)
-                }
-            } else {
-                LibraryDatePicker(selection: $grouping)
-                Text("Atualize o Nexus no Android para buscar por nome, filtrar por data e abrir os itens aqui.")
-                    .font(.caption).foregroundStyle(palette.muted)
-            }
-
             if gallery.loading { ProgressView("Buscando mídia…").controlSize(.small) }
             if let feedback = gallery.feedback { Text(feedback).foregroundStyle(.secondary) }
-            if gallery.items.isEmpty && !gallery.loading && gallery.feedback == nil {
-                Text("Nenhuma foto ou vídeo corresponde aos filtros.").foregroundStyle(.secondary)
+            if visibleItems.isEmpty && (favoritesOnly || (!gallery.loading && gallery.feedback == nil)) {
+                Text(favoritesOnly ? "Nenhum favorito." : "Nenhuma foto ou vídeo corresponde aos filtros.").foregroundStyle(.secondary)
             }
             LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
                 if effectiveGrouping == .none {
-                    ForEach(gallery.items) { item in mediaCell(item) }
+                    ForEach(visibleItems) { item in mediaCell(item) }
                 } else {
                     ForEach(dateSections) { group in
                         SwiftUI.Section {
@@ -80,28 +78,53 @@ struct GalleryBrowser: View {
                     }
                 }
             }
-            if gallery.more {
+            if gallery.more && !favoritesOnly {
                 Button("Mais itens") { gallery.page() }
                     .buttonStyle(NexusPillStyle(compact: true)).disabled(gallery.loading)
             }
         }
-        .onAppear { gallery.loadIfNeeded() }
+        .onAppear { gallery.refresh() }
         .onChange(of: gallery.filters) { gallery.filtersChanged() }
         .sheet(isPresented: Binding(get: { gallery.preview != nil }, set: { if !$0 { gallery.preview = nil } })) {
             GalleryPreviewSheet(gallery: gallery, files: files, canTransfer: canTransfer)
         }
     }
 
+    private var filterOptions: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("Álbum", selection: $gallery.filters.album) {
+                Text("Todos os álbuns").tag("")
+                ForEach(gallery.albums) { Text($0.name).tag($0.id) }
+            }
+            if gallery.advanced {
+                Picker("Adicionado em", selection: $gallery.filters.period) {
+                    ForEach(GalleryModel.Filters.Period.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                Picker("Ordenar", selection: $gallery.filters.order) {
+                    ForEach(GalleryModel.Filters.Order.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                if gallery.filters.period == .custom {
+                    DatePicker("De", selection: $gallery.filters.start, in: ...gallery.filters.end, displayedComponents: .date)
+                    DatePicker("Até", selection: $gallery.filters.end, in: gallery.filters.start..., displayedComponents: .date)
+                }
+            }
+            LibraryDatePicker(selection: $grouping).disabled(gallery.filters.order == .name)
+        }.padding(16).frame(width: 300)
+    }
+
     private var dateSections: [LibraryDateSection<MediaEntry>] {
-        effectiveGrouping.sections(for: gallery.items, oldestFirst: gallery.filters.order == .oldest, calendar: calendar) { item in
+        effectiveGrouping.sections(for: visibleItems, oldestFirst: !favoritesOnly && gallery.filters.order == .oldest, calendar: calendar) { item in
             guard (1...253_402_300_799).contains(item.at) else { return nil }
             return Date(timeIntervalSince1970: Double(item.at))
         }
     }
 
     private func mediaFilter(_ title: String, icon: String, value: String) -> some View {
-        let selected = gallery.filters.mediaType == value
-        return Button { gallery.filters.mediaType = value } label: {
+        let selected = !favoritesOnly && gallery.filters.mediaType == value
+        return Button {
+            favoritesOnly = false
+            gallery.filters.mediaType = value
+        } label: {
             Label(title, systemImage: icon).fixedSize()
         }
         .buttonStyle(NexusPillStyle(selected: selected, compact: true))
@@ -109,6 +132,7 @@ struct GalleryBrowser: View {
     }
 
     private func mediaCell(_ item: MediaEntry) -> some View {
+        let isFavorite = favorites[deviceID]?.contains { $0.id == item.id } == true
         let isPhoto = item.mime.hasPrefix("image/")
         let canOpen = gallery.advanced && (isPhoto || canTransfer || gallery.hasOriginal(item))
         return VStack(alignment: .leading, spacing: 6) {
@@ -116,6 +140,7 @@ struct GalleryBrowser: View {
                 thumbnail(item, isPhoto: isPhoto)
             }
             .buttonStyle(.plain).disabled(!canOpen)
+            .help(canOpen ? "Abrir no Mac" : "Ative Arquivos nos dois dispositivos para abrir vídeos.")
             .accessibilityLabel("Abrir \(item.name) no Mac")
             Text(item.name).lineLimit(1).font(.subheadline.weight(.medium)).help(item.name)
             if effectiveGrouping != .day, (1...253_402_300_799).contains(item.at) {
@@ -123,11 +148,12 @@ struct GalleryBrowser: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             HStack(spacing: 8) {
-                if gallery.advanced {
-                    Button("Abrir") { gallery.open(item) }
-                        .buttonStyle(NexusPillStyle(compact: true)).disabled(!canOpen)
-                        .help(canOpen ? "Abrir no Mac" : "Ative Arquivos nos dois dispositivos para abrir vídeos.")
+                let title = isFavorite ? "Remover dos favoritos" : "Adicionar aos favoritos"
+                Button { toggleFavorite(item) } label: {
+                    Image(systemName: isFavorite ? "star.fill" : "star")
                 }
+                .buttonStyle(NexusPillStyle(selected: isFavorite, compact: true))
+                .help(title).accessibilityLabel(title)
                 Spacer(minLength: 0)
                 Button { gallery.download(item) } label: { Image(systemName: "arrow.down.to.line") }
                     .buttonStyle(NexusPillStyle(compact: true))
@@ -135,8 +161,7 @@ struct GalleryBrowser: View {
                     .help("Baixar original").accessibilityLabel("Baixar original de \(item.name)")
             }
         }
-        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-        .nexusPanel(palette, radius: 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func thumbnail(_ item: MediaEntry, isPhoto: Bool) -> some View {
@@ -153,7 +178,7 @@ struct GalleryBrowser: View {
                         .shadow(color: .black.opacity(0.35), radius: 4)
                 }
             }
-        }.frame(height: 109).clipShape(RoundedRectangle(cornerRadius: 9))
+        }.aspectRatio(1, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 9))
             .onAppear { gallery.thumbnail(item.id) }
             .accessibilityHidden(true)
     }

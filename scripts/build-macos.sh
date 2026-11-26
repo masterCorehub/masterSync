@@ -22,7 +22,38 @@ install -m 644 "$repo/macOS/Info.plist" "$app/Contents/Info.plist"
 install -m 644 "$repo/macOS/Resources/Nexus.icns" "$app/Contents/Resources/Nexus.icns"
 bash "$repo/scripts/build-adb-clipboard.sh" "$app/Contents/Resources/NexusUsbClipboard.jar"
 codesign --force --sign "$signer" "$app"
-codesign --verify --strict "$app"
+if [[ "$signer" != "-" ]]; then
+    share_team="$(codesign --display --verbose=4 "$app" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+    if [[ "$share_team" =~ ^[A-Z0-9]{10}$ ]]; then
+        share_group="$share_team.mastersync"
+        share="$app/Contents/PlugIns/MasterSyncShare.appex"
+        mkdir -p "$share/Contents/MacOS"
+        install -m 644 "$repo/macOS/ShareExtension/Info.plist" "$share/Contents/Info.plist"
+        /usr/libexec/PlistBuddy -c "Add :MasterSyncShareGroup string $share_group" "$app/Contents/Info.plist"
+        /usr/libexec/PlistBuddy -c "Add :MasterSyncShareGroup string $share_group" "$share/Contents/Info.plist"
+        xcrun swiftc -module-cache-path "$scratch/module-cache" -parse-as-library -application-extension \
+            -target "$(uname -m)-apple-macos14" -framework Social -Xlinker -e -Xlinker _NSExtensionMain \
+            "$repo/macOS/Sources/NexusCore/ShareInbox.swift" "$repo/macOS/ShareExtension/ShareController.swift" \
+            -o "$share/Contents/MacOS/MasterSyncShare"
+        cat > "$stage/app.entitlements" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>com.apple.security.application-groups</key><array><string>$share_group</string></array>
+</dict></plist>
+PLIST
+        cat > "$stage/share.entitlements" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>com.apple.security.app-sandbox</key><true/>
+<key>com.apple.security.files.user-selected.read-only</key><true/>
+<key>com.apple.security.application-groups</key><array><string>$share_group</string></array>
+</dict></plist>
+PLIST
+        codesign --force --sign "$signer" --entitlements "$stage/share.entitlements" "$share"
+        codesign --force --sign "$signer" --entitlements "$stage/app.entitlements" "$app"
+    fi
+fi
+codesign --verify --deep --strict "$app"
 archive="$stage/Nexus masterSync macOS.zip"
 ditto -c -k --keepParent "$app" "$archive"
 install -m 644 "$archive" "$dist/Nexus masterSync macOS.zip"

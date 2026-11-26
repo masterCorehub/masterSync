@@ -65,6 +65,13 @@ cd android
 
 O APK completo de depuração fica em `android/app/build/outputs/apk/full/debug/app-full-debug.apk`. O APK da edição direta sai em `android/app/build/outputs/apk/direct/release/app-direct-release-unsigned.apk` e precisa de assinatura via `apksigner`. Use a mesma chave para instalar futuras atualizações desse pacote. O Android Studio pode abrir a pasta `android` diretamente.
 
+### Enviar ao Android pelo macOS
+
+Com o MasterSync aberto e o Android conectado, selecione um arquivo no Finder ou texto em um app compatível e use **Serviços → Enviar ao Android**. Ative **Arquivos** para anexos e conecte uma versão Android com **Conversa** para enviar links ou texto.
+
+Um build assinado com uma identidade que fornece um Team ID também inclui **Compartilhar → Enviar ao Android**. O build usa o App Group da mesma equipe para entregar ao MasterSync os arquivos selecionados na extensão. O ZIP assinado localmente oferece o atalho de **Serviços**.
+
+
 ## O que está disponível
 
 As duas edições Android se comunicam com o mesmo app macOS. O quadro descreve a edição completa. O espelhamento de notificações de outros apps e o controle remoto de mídia estão disponíveis na edição completa. A edição direta mantém notificações próprias do Nexus para conexões, scanner e espelhamento de tela.
@@ -82,7 +89,7 @@ As duas edições Android se comunicam com o mesmo app macOS. O quadro descreve 
 - **Área de transferência.** O Android 10 em diante permite a leitura a partir do app em foco ou do teclado padrão. O Teclado Nexus é uma opção para enviar cópias ao Mac enquanto outro app está em foco. Os itens marcados como sensíveis são ignorados. Sincronização de imagens aceita até 8 MiB e depende de os apps envolvidos oferecerem cópia e colagem de imagens. O histórico persistente do Mac guarda texto quando habilitado. [Restrições da área de transferência](https://developer.android.com/about/versions/10/privacy/changes#clipboard-data)
 - **Arquivos e galeria.** A retomada pressupõe que o app remetente continue aberto ou conectado em segundo plano. Ela cobre interrupção de transporte. Original de vídeo abre automaticamente após download e verificação. A fila automática de mídia processa até 20 itens por consulta. Os arquivos originais são transferidos sem recodificação. [Acesso parcial à mídia](https://developer.android.com/about/versions/14/changes/partial-photo-video-access)
 - **Scanner.** A primeira abertura pode precisar baixar o componente do scanner pelo Google Play Services. ML Kit processa documentos e OCR no dispositivo. O SDK pode enviar métricas de uso e desempenho ao Google durante o uso. [Scanner do ML Kit](https://developers.google.com/ml-kit/vision/doc-scanner/android) · [Termos e privacidade do ML Kit](https://developers.google.com/ml-kit/terms)
-- **Espelhamento e controle.** O Android pede consentimento por sessão e a taxa real depende do tamanho dos quadros e da rede. O modo nativo oferece visualização. A janela externa do scrcpy fornece a entrada via USB. Webcam como dispositivo de câmera do macOS, controle nativo por Wi-Fi e extensão de entrada do menu Compartilhar do macOS permanecem em desenvolvimento. [MediaProjection](https://developer.android.com/media/grow/media-projection) · [Controle do scrcpy](https://github.com/Genymobile/scrcpy/blob/master/doc/control.md) · [Extensões de câmera do macOS](https://developer.apple.com/documentation/coremediaio/creating-a-camera-extension-with-core-media-i-o)
+- **Espelhamento e controle.** O Android pede consentimento por sessão e a taxa real depende do tamanho dos quadros e da rede. O modo nativo oferece visualização. A janela externa do scrcpy fornece a entrada via USB. A webcam como dispositivo de câmera do macOS permanece em desenvolvimento. [MediaProjection](https://developer.android.com/media/grow/media-projection) · [Controle do scrcpy](https://github.com/Genymobile/scrcpy/blob/master/doc/control.md) · [Extensões de câmera do macOS](https://developer.apple.com/documentation/coremediaio/creating-a-camera-extension-with-core-media-i-o)
 
 ### Conexão alternativa por USB
 
