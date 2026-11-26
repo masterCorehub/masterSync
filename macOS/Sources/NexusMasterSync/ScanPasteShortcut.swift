@@ -4,13 +4,12 @@ import Carbon.HIToolbox
 
 @MainActor
 final class ScanPasteShortcut {
-    static let label = "⌃⌥⌘D"
     var action: (() -> Void)?
     private var hotKey: EventHotKeyRef?
     private var handler: EventHandlerRef?
 
-    func register() -> Bool {
-        if hotKey != nil { return true }
+    func register(_ combo: KeyCombo) -> Bool {
+        unregister()
         var event = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let context = Unmanaged.passUnretained(self).toOpaque()
         let installed = InstallEventHandler(GetApplicationEventTarget(), { _, _, context in
@@ -21,7 +20,7 @@ final class ScanPasteShortcut {
         }, 1, &event, context, &handler)
         guard installed == noErr else { return false }
         let id = EventHotKeyID(signature: 0x4D535350, id: 1)
-        let status = RegisterEventHotKey(UInt32(kVK_ANSI_D), UInt32(controlKey | optionKey | cmdKey),
+        let status = RegisterEventHotKey(combo.keyCode, combo.modifiers,
                                          id, GetApplicationEventTarget(), 0, &hotKey)
         if status != noErr { unregister() }
         return status == noErr

@@ -1230,7 +1230,7 @@ struct Dashboard: View {
                 Button("Gerenciar dispositivos") { model.section = .devices }
             }
             card("Digitalizar e colar", icon: "document.viewfinder") {
-                Toggle("Ativar atalho \(ScanPasteShortcut.label)", isOn: $model.scanPasteEnabled)
+                Toggle("Ativar atalho \(model.scanShortcut.label)", isOn: $model.scanPasteEnabled)
                 Text("A primeira página vai para a área de transferência. Permita Acessibilidade para colar no campo original.")
                     .foregroundStyle(palette.muted)
                 Button("Autorizar colagem automática") {
@@ -1239,8 +1239,21 @@ struct Dashboard: View {
                 .buttonStyle(NexusPillStyle(compact: true))
                 if let feedback = model.scanPasteFeedback { empty(feedback) }
             }
-            card("Atalhos de teclado", icon: "keyboard") {
-                Text("Os atalhos abaixo usam Shift + Command quando o Nexus está ativo.")
+            card("Atalhos", icon: "keyboard") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Digitalizar e colar")
+                        Text("Funciona em qualquer app quando o atalho está ativo.").font(.caption).foregroundStyle(palette.muted)
+                    }
+                    Spacer()
+                    ShortcutRecorder(combo: model.scanShortcut) { model.setScanShortcut($0) }
+                    Button("Padrão") { model.setScanShortcut(.scanDefault) }
+                        .buttonStyle(NexusPillStyle(compact: true))
+                        .disabled(model.scanShortcut == .scanDefault)
+                }
+                if let feedback = model.scanPasteFeedback { empty(feedback) }
+                Divider()
+                Text("Com o Nexus em primeiro plano, estes usam Shift + Command:")
                     .foregroundStyle(palette.muted)
                 let letters = Array("abcdefghijklmnopqrstuvwxyz").map(String.init)
                 HStack(spacing: 18) {

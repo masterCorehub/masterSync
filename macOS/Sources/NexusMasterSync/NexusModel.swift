@@ -108,6 +108,28 @@ final class NexusModel: ObservableObject {
         }
     }
     @Published private(set) var scanPasteFeedback: String?
+    /// The global scan-and-paste shortcut; a combination macOS refuses keeps the previous one.
+    @Published private(set) var scanShortcut: KeyCombo = UserDefaults.standard.data(forKey: "shortcut-scan")
+        .flatMap { try? JSONDecoder().decode(KeyCombo.self, from: $0) } ?? .scanDefault
+
+    @discardableResult
+    func setScanShortcut(_ combo: KeyCombo) -> Bool {
+        let previous = scanShortcut
+        scanShortcut = combo
+        guard scanPasteEnabled else {
+            preferences.set(try? JSONEncoder().encode(combo), forKey: "shortcut-scan")
+            return true
+        }
+        if scanPasteShortcut.register(combo) {
+            preferences.set(try? JSONEncoder().encode(combo), forKey: "shortcut-scan")
+            scanPasteFeedback = nil
+            return true
+        }
+        scanShortcut = previous
+        _ = scanPasteShortcut.register(previous)
+        scanPasteFeedback = "\(combo.label) está em uso por outro app. O atalho continua \(previous.label)."
+        return false
+    }
     private let scanPasteShortcut = ScanPasteShortcut()
     private var scanPasteRequest: (peer: String, id: String, target: ScanPasteShortcut.Target?)?
     @Published private(set) var cameraFeedback: String?
@@ -680,8 +702,8 @@ final class NexusModel: ObservableObject {
 
     private func registerScanPaste() {
         scanPasteShortcut.action = { [weak self] in self?.requestScanPaste() }
-        if !scanPasteShortcut.register() {
-            scanPasteFeedback = "O atalho \(ScanPasteShortcut.label) está indisponível. Confira se outro app o usa."
+        if !scanPasteShortcut.register(scanShortcut) {
+            scanPasteFeedback = "O atalho \(scanShortcut.label) está em uso por outro app. Escolha outro em Atalhos."
         }
     }
 
