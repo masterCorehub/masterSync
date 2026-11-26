@@ -72,7 +72,9 @@ final class NexusModel: ObservableObject {
             advertiseCapabilities()
         }
     }
-    @Published var clipboardEnabled: Bool { didSet { persist(clipboardEnabled, "clipboard"); advertiseCapabilities() } }
+    @Published var clipboardEnabled: Bool {
+        didSet { persist(clipboardEnabled, "clipboard"); advertiseCapabilities(); autoStartClipboardSync() }
+    }
     @Published var historyEnabled: Bool {
         didSet { persist(historyEnabled, "history"); clipboard.recordHistory = historyEnabled }
     }
@@ -106,6 +108,28 @@ final class NexusModel: ObservableObject {
         }
     }
     @Published private(set) var scanPasteFeedback: String?
+    /// The global scan-and-paste shortcut; a combination macOS refuses keeps the previous one.
+    @Published private(set) var scanShortcut: KeyCombo = UserDefaults.standard.data(forKey: "shortcut-scan")
+        .flatMap { try? JSONDecoder().decode(KeyCombo.self, from: $0) } ?? .scanDefault
+
+    @discardableResult
+    func setScanShortcut(_ combo: KeyCombo) -> Bool {
+        let previous = scanShortcut
+        scanShortcut = combo
+        guard scanPasteEnabled else {
+            preferences.set(try? JSONEncoder().encode(combo), forKey: "shortcut-scan")
+            return true
+        }
+        if scanPasteShortcut.register(combo) {
+            preferences.set(try? JSONEncoder().encode(combo), forKey: "shortcut-scan")
+            scanPasteFeedback = nil
+            return true
+        }
+        scanShortcut = previous
+        _ = scanPasteShortcut.register(previous)
+        scanPasteFeedback = "\(combo.label) está em uso por outro app. O atalho continua \(previous.label)."
+        return false
+    }
     private let scanPasteShortcut = ScanPasteShortcut()
     private var scanPasteRequest: (peer: String, id: String, target: ScanPasteShortcut.Target?)?
     @Published private(set) var cameraFeedback: String?
@@ -187,6 +211,9 @@ final class NexusModel: ObservableObject {
         relay.forward = { [weak self] in self?.server?.send($1, to: $0) }
         clipboard.recordHistory = historyEnabled
         adbClipboard.receive = { [weak self] event in self?.clipboard.receive(event) }
+        adbClipboard.onEnded = { [weak self] in
+            self?.clipboardRetry.schedule(after: .seconds(15)) { [weak self] in self?.autoStartClipboardSync() }
+        }
         screen.send = { [weak self] in self?.server?.send($1, to: $0) }
         gallery.send = { [weak self] in self?.server?.send($1, to: $0) }
         files.didReceive = { [weak self] file in
@@ -557,6 +584,64 @@ final class NexusModel: ObservableObject {
     }
 
     @Published private(set) var launcherLists: [String: [AndroidApp]] = [:]
+    /// Icons of pinned Android apps, by component, kept across launches.
+    @Published private(set) var launcherIcons: [String: NSImage] = NexusModel.loadLauncherIcons()
+    private var requestedIcons: Set<String> = []
+    private var lastIconRequest: (pins: [String], components: [String])?
+
+    nonisolated static let maxIconRequest = 24
+
+    /// Valid pinned components without a cached icon, in pin order, without repeats, at most 24.
+    nonisolated static func missingIcons(pins: [String], cached: Set<String>) -> [String] {
+        var seen = Set<String>()
+        return pins.filter { pin in
+            AndroidApp(component: pin, label: "").validComponent && !cached.contains(pin) && seen.insert(pin).inserted
+        }.prefix(maxIconRequest).map { $0 }
+    }
+
+    /// Icon bytes only when they are small and decode as an image.
+    nonisolated static func acceptedIcon(_ base64: String) -> Data? {
+        guard base64.utf8.count <= 96 * 1024, let data = Data(base64Encoded: base64), data.count <= 64 * 1024,
+              NSImage(data: data)?.isValid == true else { return nil }
+        return data
+    }
+
+    private static func loadLauncherIcons() -> [String: NSImage] {
+        guard let stored = UserDefaults.standard.data(forKey: "launcher-icons"),
+              let decoded = try? JSONDecoder().decode([String: Data].self, from: stored) else { return [:] }
+        return decoded.compactMapValues { NSImage(data: $0) }
+    }
+
+    func requestLauncherIcons(for pins: [String]) {
+        // Wait for the app list: icons are only accepted for components it contains.
+        guard launcherAvailable, let peer = selected?.id, let apps = launcherLists[peer] else { return }
+        let listed = Set(apps.map(\.id))
+        let missing = Self.missingIcons(pins: pins.filter(listed.contains), cached: Set(launcherIcons.keys).union(requestedIcons))
+        guard !missing.isEmpty else { return }
+        requestedIcons.formUnion(missing)
+        lastIconRequest = (pins, missing)
+        var message = Message("launcherIconsRequest")
+        message.components = missing
+        server?.send(message, to: peer)
+    }
+
+    private func receiveLauncherIcons(_ icons: [AndroidAppIcon], peer: String, message: Message) {
+        let known = Set((launcherLists[peer] ?? []).map(\.id))
+        var stored = (UserDefaults.standard.data(forKey: "launcher-icons"))
+            .flatMap { try? JSONDecoder().decode([String: Data].self, from: $0) } ?? [:]
+        for icon in icons.prefix(Self.maxIconRequest) where known.contains(icon.component) {
+            guard let data = Self.acceptedIcon(icon.data), let image = NSImage(data: data) else { continue }
+            launcherIcons[icon.component] = image
+            stored[icon.component] = data
+        }
+        UserDefaults.standard.set(try? JSONEncoder().encode(stored), forKey: "launcher-icons")
+        // Android stops before the frame limit and says so; ask again for the ones it left out.
+        if message.more == true, !icons.isEmpty, let last = lastIconRequest {
+            let answered = Set(icons.map(\.component))
+            requestedIcons.subtract(last.components.filter { !answered.contains($0) })
+            requestLauncherIcons(for: last.pins)
+        }
+    }
 
     var launcherAvailable: Bool {
         active && selected.map { permissions[$0.id]?.launcher == true } == true
@@ -570,7 +655,11 @@ final class NexusModel: ObservableObject {
     func launchAndroidApp(_ app: AndroidApp) {
         guard canMirror, let peer = selected?.id, let target = wirelessControlDevice(for: peer),
               launcherLists[peer]?.contains(where: { $0.id == app.id }) == true else { return }
-        screen.beginControl(peer, wireless: target, open: app)
+        if ScreenMirror.controlRoute(hasWirelessADB: true, scrcpyInstalled: screen.scrcpyInstalled) == .scrcpy {
+            screen.openAppWithScrcpy(app, wireless: target)
+        } else {
+            screen.beginControl(peer, wireless: target, open: app)
+        }
     }
 
     func requestMirror() {
@@ -610,8 +699,8 @@ final class NexusModel: ObservableObject {
 
     private func registerScanPaste() {
         scanPasteShortcut.action = { [weak self] in self?.requestScanPaste() }
-        if !scanPasteShortcut.register() {
-            scanPasteFeedback = "O atalho \(ScanPasteShortcut.label) está indisponível. Confira se outro app o usa."
+        if !scanPasteShortcut.register(scanShortcut) {
+            scanPasteFeedback = "O atalho \(scanShortcut.label) está em uso por outro app. Escolha outro em Atalhos."
         }
     }
 
@@ -627,6 +716,9 @@ final class NexusModel: ObservableObject {
         var message = Message("scanRequest")
         message.id = id
         server?.send(message, to: peer)
+        openScanCameraOverADB(peer: peer, id: id) { [weak self] opened in
+            if opened, self?.scanPasteRequest?.id == id { self?.scanPasteFeedback = "Abrindo a câmera no Android…" }
+        }
         Task {
             try? await Task.sleep(for: .seconds(180))
             if scanPasteRequest?.id == id {
@@ -659,8 +751,28 @@ final class NexusModel: ObservableObject {
 
     func requestScan() {
         guard let peer = selected, canRequestScan else { return }
-        server?.send(Message("scanRequest"), to: peer.id)
+        var message = Message("scanRequest")
+        message.id = Wire.id()
+        server?.send(message, to: peer.id)
         scanRequestFeedback = "Solicitação enviada. Confirme a abertura do scanner no celular."
+        if let id = message.id {
+            openScanCameraOverADB(peer: peer.id, id: id) { [weak self] opened in
+                if opened { self?.scanRequestFeedback = "Abrindo a câmera no Android…" }
+            }
+        }
+    }
+
+    /// With ADB over Wi-Fi, opens the camera on the phone directly instead of waiting for a tap there.
+    private func openScanCameraOverADB(peer: String, id: String, done: @escaping (Bool) -> Void) {
+        guard let device = wirelessControlDevice(for: peer), let adb = ADBClipboard.adbExecutable else { return }
+        Task {
+            let opened = await Task.detached {
+                let session = ADBClipboardSession(adb: adb)
+                guard let serial = try? await session.wirelessSerial(for: device) else { return false }
+                return (try? session.openScanCamera(serial: serial, requestID: id)) != nil
+            }.value
+            done(opened)
+        }
     }
 
     private func persist(_ value: Bool, _ key: String) { preferences.set(value, forKey: key) }
@@ -730,6 +842,18 @@ final class NexusModel: ObservableObject {
         advertiseCapabilities()
     }
 
+    /// Starts Android → Mac clipboard sync over Wi-Fi ADB by itself, so copies arrive with any keyboard and app.
+    func autoStartClipboardSync() {
+        let connected = active ? selected?.id : nil
+        guard ADBClipboard.shouldAutoStart(clipboardEnabled: clipboardEnabled, device: adbClipboard.wirelessDevice,
+                                           connectedPeer: connected, running: adbClipboard.transport != nil,
+                                           paused: adbClipboard.paused),
+              let device = adbClipboard.wirelessDevice else { return }
+        clipboardRetry.cancel()
+        adbClipboard.startWiFi(device: device)
+    }
+    private let clipboardRetry = SingleRetry()
+
     private func resetSession(_ peer: String) {
         permissions[peer] = nil
         notifications.removePeer(peer)
@@ -748,6 +872,7 @@ final class NexusModel: ObservableObject {
                 (permissions[peer]?.noticeSync != true ||
                     (message.notifications == true && permissions[peer]?.notifications != true))
             permissions[peer] = message
+            autoStartClipboardSync()
             if shouldRefresh { server?.send(Message("noticeRefresh"), to: peer) }
             updateClipboardImages()
             if message.notifications != true { notifications.removePeer(peer) }
@@ -759,6 +884,10 @@ final class NexusModel: ObservableObject {
                 var seen = Set<String>()
                 launcherLists[peer] = apps.prefix(200).filter { $0.validComponent && seen.insert($0.id).inserted }
                     .sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending }
+            }
+        case "launcherIcons":
+            if permissions[peer]?.launcher == true, let icons = message.launcherIcons {
+                receiveLauncherIcons(icons, peer: peer, message: message)
             }
         case "adbProofReady":
             if online.contains(peer), let nonce = message.id, Wire.validID(nonce) {

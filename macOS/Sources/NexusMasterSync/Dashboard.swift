@@ -98,6 +98,8 @@ struct Dashboard: View {
         }
         .sheet(isPresented: $wirelessClipboardSetup) {
             WirelessClipboardSetup(device: model.adbClipboard.wirelessDevice) { device, pairing in
+                // A session stuck reconnecting to an old address would make the new setup a no-op.
+                model.adbClipboard.stop()
                 model.adbClipboard.startWiFi(device: device, pairing: pairing)
             }
         }
@@ -273,6 +275,15 @@ struct Dashboard: View {
         (try? JSONDecoder().decode([String: [String]].self, from: storedLauncherPins)) ?? [:]
     }
 
+    private func setPinned(_ id: String, peer: String, pinned: Bool) {
+        var saved = launcherPins
+        var ids = saved[peer] ?? []
+        ids.removeAll { $0 == id }
+        if pinned { ids.append(id) }
+        saved[peer] = ids
+        if let data = try? JSONEncoder().encode(saved) { storedLauncherPins = data }
+    }
+
     private var canLaunchApps: Bool {
         model.canMirror && model.wirelessControlDevice(for: model.selected?.id) != nil
             && !model.screen.preparingControl
@@ -295,19 +306,43 @@ struct Dashboard: View {
             .popover(isPresented: $showingLauncher, arrowEdge: .bottom) {
                 launcherPopover(apps: apps, peer: peer, pins: pins)
             }
-            if !pinnedApps.isEmpty {
+            let withIcon = pinnedApps.filter { model.launcherIcons[$0.id] != nil }
+            let withoutIcon = pinnedApps.filter { model.launcherIcons[$0.id] == nil }
+            if !withIcon.isEmpty {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 8)], alignment: .leading, spacing: 8) {
+                    ForEach(withIcon) { app in pinnedAppButton(app, peer: peer) }
+                }
+            }
+            if !withoutIcon.isEmpty {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], alignment: .leading, spacing: 8) {
-                    ForEach(pinnedApps) { app in
-                        Button { model.launchAndroidApp(app) } label: {
-                            Text(Wire.visible(app.label, limit: 70)).lineLimit(1).frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(NexusPillStyle(compact: true)).disabled(!canLaunchApps)
-                    }
+                    ForEach(withoutIcon) { app in pinnedAppButton(app, peer: peer) }
                 }
             }
         }
         .task(id: model.launcherAvailable && !peer.isEmpty ? peer : "") { model.refreshLauncher() }
+        .task(id: pins + [peer, model.launcherLists[peer] == nil ? "" : "ready"]) {
+            model.requestLauncherIcons(for: pins)
+        }
         .onChange(of: peer) { _, _ in showingLauncher = false }
+    }
+
+    private func pinnedAppButton(_ app: AndroidApp, peer: String) -> some View {
+        let label = Wire.visible(app.label, limit: 70)
+        return Button { model.launchAndroidApp(app) } label: {
+            if let icon = model.launcherIcons[app.id] {
+                Image(nsImage: icon).resizable().interpolation(.high).scaledToFit()
+                    .frame(width: 32, height: 32)
+            } else {
+                Text(label).lineLimit(1).frame(maxWidth: .infinity)
+            }
+        }
+        .buttonStyle(model.launcherIcons[app.id] == nil ? NexusPillStyle(compact: true) : NexusPillStyle(compact: true, segmented: true))
+        .help(label)
+        .accessibilityLabel(label)
+        .disabled(!canLaunchApps)
+        .contextMenu {
+            Button("Desafixar", systemImage: "pin.slash") { setPinned(app.id, peer: peer, pinned: false) }
+        }
     }
 
     private func launcherPopover(apps: [AndroidApp], peer: String, pins: [String]) -> some View {
@@ -355,14 +390,8 @@ struct Dashboard: View {
                                             .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                                     }
                                     .buttonStyle(.plain).disabled(!canLaunchApps)
-                                    Button {
-                                        var saved = launcherPins
-                                        var ids = saved[peer] ?? []
-                                        if pinned { ids.removeAll { $0 == app.id } }
-                                        else { ids.append(app.id) }
-                                        saved[peer] = ids
-                                        if let data = try? JSONEncoder().encode(saved) { storedLauncherPins = data }
-                                    } label: { Image(systemName: pinned ? "pin.fill" : "pin") }
+                                    Button { setPinned(app.id, peer: peer, pinned: !pinned) }
+                                    label: { Image(systemName: pinned ? "pin.fill" : "pin") }
                                     .buttonStyle(NexusPillStyle(compact: true))
                                     .help(pinned ? "Desafixar app" : "Fixar app")
                                     .accessibilityLabel(pinned ? "Desafixar app" : "Fixar app")
@@ -575,7 +604,11 @@ struct Dashboard: View {
         Button {
             if let peer = model.selected?.id {
                 if let device = model.wirelessControlDevice(for: peer) {
-                    model.screen.beginControl(peer, wireless: device)
+                    if ScreenMirror.controlRoute(hasWirelessADB: true, scrcpyInstalled: model.screen.scrcpyInstalled) == .scrcpy {
+                        model.screen.launchScrcpy(audioOnly: false, wireless: device)
+                    } else {
+                        model.screen.beginControl(peer, wireless: device)
+                    }
                 } else { openWirelessControlGuide() }
             }
         } label: {
@@ -747,13 +780,27 @@ struct Dashboard: View {
     }
 
     private func dismissNoticeButton(_ notice: NotificationSync.Notice) -> some View {
-        Button { model.notifications.dismiss(notice) } label: {
-            Image(systemName: "xmark.circle")
+        let label = notice.canDismiss ? "Dispensar no Android" : "Fixa no Android — ocultar só no Mac"
+        return Button {
+            if notice.canDismiss { model.notifications.dismiss(notice) } else { model.notifications.hide(notice) }
+        } label: {
+            Image(systemName: notice.canDismiss ? "xmark.circle" : "eye.slash")
         }
         .buttonStyle(.borderless)
-        .help("Dispensar no Android")
-        .accessibilityLabel("Dispensar no Android")
-        .disabled(!notice.canDismiss)
+        .help(label)
+        .accessibilityLabel(notice.canDismiss ? "Dispensar no Android" : "Ocultar no Mac")
+    }
+
+    private var clearAllNoticesButton: some View {
+        let peer = model.selected?.id
+        return Button {
+            if let peer { model.notifications.clearAll(peer: peer) }
+        } label: {
+            Label("Limpar todas", systemImage: "xmark.bin")
+        }
+        .buttonStyle(NexusPillStyle(compact: true))
+        .help("Fecha no Android as que podem ser fechadas e oculta no Mac as fixas")
+        .disabled(peer == nil || !model.notifications.notices.contains { $0.peer == peer })
     }
 
     private var compactNotifications: some View {
@@ -762,6 +809,7 @@ struct Dashboard: View {
             HStack {
                 androidDndToggle
                 Spacer()
+                clearAllNoticesButton
                 Button("Ver todas") { showNotices = false; model.section = .notifications }
                     .buttonStyle(NexusPillStyle(compact: true))
             }
@@ -877,7 +925,7 @@ struct Dashboard: View {
                     .foregroundStyle(palette.muted)
                 if let transport = model.adbClipboard.transport {
                     Button(transport == .usb ? "Parar sincronização USB" : "Parar sincronização Wi-Fi") {
-                        model.adbClipboard.stop()
+                        model.adbClipboard.stop(userInitiated: true)
                     }.buttonStyle(NexusPillStyle())
                 } else {
                     HStack {
@@ -1007,6 +1055,7 @@ struct Dashboard: View {
                 }
             }
             card("Ativas no Android", icon: "tray") {
+                clearAllNoticesButton
                 if model.canRefreshNotices && model.notificationsEnabled {
                     Button("Atualizar") { model.refreshNotices() }
                         .buttonStyle(NexusPillStyle(compact: true))
@@ -1183,7 +1232,7 @@ struct Dashboard: View {
                 Button("Gerenciar dispositivos") { model.section = .devices }
             }
             card("Digitalizar e colar", icon: "document.viewfinder") {
-                Toggle("Ativar atalho \(ScanPasteShortcut.label)", isOn: $model.scanPasteEnabled)
+                Toggle("Ativar atalho \(model.scanShortcut.label)", isOn: $model.scanPasteEnabled)
                 Text("A primeira página vai para a área de transferência. Permita Acessibilidade para colar no campo original.")
                     .foregroundStyle(palette.muted)
                 Button("Autorizar colagem automática") {
@@ -1192,8 +1241,21 @@ struct Dashboard: View {
                 .buttonStyle(NexusPillStyle(compact: true))
                 if let feedback = model.scanPasteFeedback { empty(feedback) }
             }
-            card("Atalhos de teclado", icon: "keyboard") {
-                Text("Os atalhos abaixo usam Shift + Command quando o Nexus está ativo.")
+            card("Atalhos", icon: "keyboard") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Digitalizar e colar")
+                        Text("Funciona em qualquer app quando o atalho está ativo.").font(.caption).foregroundStyle(palette.muted)
+                    }
+                    Spacer()
+                    ShortcutRecorder(combo: model.scanShortcut) { model.setScanShortcut($0) }
+                    Button("Padrão") { model.setScanShortcut(.scanDefault) }
+                        .buttonStyle(NexusPillStyle(compact: true))
+                        .disabled(model.scanShortcut == .scanDefault)
+                }
+                if let feedback = model.scanPasteFeedback { empty(feedback) }
+                Divider()
+                Text("Com o Nexus em primeiro plano, estes usam Shift + Command:")
                     .foregroundStyle(palette.muted)
                 let letters = Array("abcdefghijklmnopqrstuvwxyz").map(String.init)
                 HStack(spacing: 18) {

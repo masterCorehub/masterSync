@@ -209,8 +209,14 @@ class MirrorNotifications : NotificationListenerService(), NotificationRelay {
     }
 
     private fun privateContent(sbn: StatusBarNotification): Boolean =
-        nexus.options.value.hideNotifications || sbn.notification.visibility == Notification.VISIBILITY_SECRET ||
-            getSystemService(KeyguardManager::class.java).isDeviceLocked
+        NoticePrivacy.redact(nexus.options.value.hideNotifications, sbn.notification.visibility,
+            getSystemService(KeyguardManager::class.java).isDeviceLocked,
+            lockscreenSetting("lock_screen_allow_private_notifications"), lockscreenSetting("lock_screen_show_notifications"))
+
+    // Hidden system keys behind the lock screen notification settings; unreadable means hide.
+    private fun lockscreenSetting(key: String): Boolean = runCatching {
+        android.provider.Settings.Secure.getInt(contentResolver, key, 1) != 0
+    }.getOrDefault(false)
 
     private fun replyAction(sbn: StatusBarNotification): Notification.Action? =
         sbn.notification.actions?.firstOrNull {

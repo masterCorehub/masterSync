@@ -51,6 +51,8 @@ class MainActivity : ComponentActivity() {
     private val recognized = mutableStateOf<String?>(null)
     private var scanPeer: String? = null
     private var scanRequestID: String? = null
+    /** A scan the Mac asked for: after the photo, give the phone back to the app the user was in. */
+    private var returnAfterScan = false
     private var captureId: String? = null
     private var photoCapture: NexusController.CameraRequest? = null
     private var advancedScanPending = false
@@ -182,6 +184,7 @@ class MainActivity : ComponentActivity() {
             captureId = null
             finishScan(null, listOf(Uri.fromFile(file)), file)
         }
+        returnToPreviousApp()
     }
     private val documentCameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
         if (allowed) launchDocumentCamera() else failScan("Permita o uso da câmera para fotografar o documento.")
@@ -196,6 +199,7 @@ class MainActivity : ComponentActivity() {
         if (pdf == null && pages.isEmpty()) {
             failScan("O scanner avançado não entregou nenhuma página. Use Fotografar documento para tentar pela câmera.")
         } else finishScan(pdf, pages)
+        returnToPreviousApp()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -223,6 +227,16 @@ class MainActivity : ComponentActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 nexus.client.status.collect { status ->
                     if (status.connected != null) startConnection()
+                }
+            }
+        }
+        lifecycleScope.launch {
+            // A scan the Mac opened MasterSync for over ADB goes straight to the camera.
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                nexus.pendingScan.collect { request ->
+                    if (request != null && nexus.scanAutoAccept.consume(request.id, android.os.SystemClock.elapsedRealtime())) {
+                        actions.acceptScan(false)
+                    }
                 }
             }
         }
@@ -286,6 +300,13 @@ class MainActivity : ComponentActivity() {
             shared.value = stream?.takeIf { it.scheme == "content" }
             tab.value = Tab.Conversation
         } else if (intent.getBooleanExtra("open-share", false)) tab.value = Tab.Conversation
+        else if (intent.getStringExtra("accept-scan") != null) {
+            tab.value = Tab.Home
+            nexus.scanAutoAccept.expect(intent.getStringExtra("accept-scan").orEmpty(), android.os.SystemClock.elapsedRealtime())
+            nexus.pendingScan.value?.let { request ->
+                if (nexus.scanAutoAccept.consume(request.id, android.os.SystemClock.elapsedRealtime())) actions.acceptScan(false)
+            }
+        }
         else if (intent.getBooleanExtra("open-scan", false)) {
             tab.value = Tab.Home
             openFeature.value = FeatureId.Scan
@@ -378,9 +399,16 @@ class MainActivity : ComponentActivity() {
 
     private fun notificationAccess() = startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
 
+    private fun returnToPreviousApp() {
+        if (!returnAfterScan) return
+        returnAfterScan = false
+        moveTaskToBack(true)
+    }
+
     private fun openDocumentCamera(authorizedPeer: String? = null, requestID: String? = null) {
         if (busy.value) return
-        openFeature.value = FeatureId.Scan
+        returnAfterScan = authorizedPeer != null
+        if (!returnAfterScan) openFeature.value = FeatureId.Scan
         nexus.note("")
         scanPeer = nexus.scanDestination(authorizedPeer)
         scanRequestID = requestID
@@ -405,6 +433,7 @@ class MainActivity : ComponentActivity() {
 
     private fun openScanner(authorizedPeer: String? = null, requestID: String? = null) {
         if (busy.value) return
+        returnAfterScan = authorizedPeer != null
         nexus.note("")
         scanPeer = nexus.scanDestination(authorizedPeer)
         scanRequestID = requestID

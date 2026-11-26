@@ -4,6 +4,13 @@ import NexusCore
 
 @MainActor
 final class ScreenMirror: ObservableObject {
+    enum ControlRoute: Equatable { case scrcpy, mirror }
+
+    /// With ADB over Wi-Fi and scrcpy, control needs no consent on the phone and survives the lock screen.
+    nonisolated static func controlRoute(hasWirelessADB: Bool, scrcpyInstalled: Bool) -> ControlRoute {
+        hasWirelessADB && scrcpyInstalled ? .scrcpy : .mirror
+    }
+
     @Published private(set) var frame: NSImage?
     @Published private(set) var controlling = false
     @Published private(set) var preparingControl = false
@@ -188,6 +195,27 @@ final class ScreenMirror: ObservableObject {
         case "screenEnded":
             clear(Wire.visible(message.message ?? "Espelhamento encerrado.", limit: 160))
         default: break
+        }
+    }
+
+    /// Opens the app over ADB and shows it in scrcpy, starting scrcpy only when it is not running yet.
+    func openAppWithScrcpy(_ app: AndroidApp, wireless: ADBWirelessDevice) {
+        guard let adb = adbPath else {
+            feedback = "Instale o ADB para abrir apps do Android."
+            return
+        }
+        feedback = nil
+        Task {
+            do {
+                try await Task.detached {
+                    let session = ADBClipboardSession(adb: adb)
+                    let serial = try await session.wirelessSerial(for: wireless)
+                    try session.openApp(app, serial: serial)
+                }.value
+                if usb == nil { launchScrcpy(audioOnly: false, wireless: wireless) }
+            } catch {
+                feedback = error.localizedDescription
+            }
         }
     }
 

@@ -218,7 +218,7 @@ final class FileTransfers: ObservableObject {
         if !FileManager.default.fileExists(atPath: partial.path) {
             try Data().write(to: partial, options: .atomic)
         }
-        let offset = try length(partial)
+        let offset = try Self.currentLength(partial)
         guard offset <= offer.size else { throw NexusError.invalidFrame }
         if let available = try? folder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
             .volumeAvailableCapacityForImportantUsage, offer.size - offset > max(0, available - 128 * 1024 * 1024) {
@@ -254,7 +254,7 @@ final class FileTransfers: ObservableObject {
     private func write(_ message: Message, record: Incoming, from peer: String) throws {
         let offer = record.offer
         guard let offset = message.offset, offset >= 0, let body = message.data, let bytes = Data(base64Encoded: body),
-              (1...Wire.chunk).contains(bytes.count), offset == (try length(record.file)),
+              (1...Wire.chunk).contains(bytes.count), offset == (try Self.currentLength(record.file)),
               offset + Int64(bytes.count) <= offer.size else { throw NexusError.invalidFrame }
         let writer = try FileHandle(forWritingTo: record.file)
         defer { try? writer.close() }
@@ -267,7 +267,7 @@ final class FileTransfers: ObservableObject {
 
     private func verify(_ record: Incoming, peer: String) {
         let offer = record.offer
-        guard (try? length(record.file)) == offer.size else {
+        guard (try? Self.currentLength(record.file)) == offer.size else {
             fail(NexusError.transfer("Arquivo incompleto."), offer.id, peer)
             return
         }
@@ -280,7 +280,7 @@ final class FileTransfers: ObservableObject {
                 let valid = try await Task.detached(priority: .utility) {
                     try FileOffer.hash(record.file) == offer.hash
                 }.value
-                guard valid, try length(record.file) == offer.size else {
+                guard valid, try Self.currentLength(record.file) == offer.size else {
                     try? FileManager.default.removeItem(at: record.file)
                     throw NexusError.transfer("O arquivo falhou na verificação de integridade.")
                 }
@@ -302,8 +302,9 @@ final class FileTransfers: ObservableObject {
         return message
     }
 
-    private func length(_ url: URL) throws -> Int64 {
-        Int64(try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0)
+    /// Size on disk right now. URL resource values are cached per URL instance and would go stale while a file grows.
+    nonisolated static func currentLength(_ url: URL) throws -> Int64 {
+        (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
     }
 
     private func update(_ offer: FileOffer, peer: String, sending: Bool, offset: Int64, verifying: Bool = false) {

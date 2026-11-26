@@ -48,6 +48,19 @@ final class ADBClipboard: ObservableObject {
     @Published private(set) var wirelessSetupError: String?
 
     var receive: ((ADBClipboardEvent) -> Void)?
+    /// Called when a running session ends on its own (not when the user stops it).
+    var onEnded: (() -> Void)?
+    /// The user stopped the sync; automatic start waits until they start it again.
+    private(set) var paused = UserDefaults.standard.bool(forKey: "adb-clipboard-paused") {
+        didSet { defaults.set(paused, forKey: "adb-clipboard-paused") }
+    }
+
+    nonisolated static func shouldAutoStart(clipboardEnabled: Bool, device: ADBWirelessDevice?, connectedPeer: String?,
+                                            running: Bool, paused: Bool) -> Bool {
+        guard clipboardEnabled, !running, !paused, let device, let connectedPeer else { return false }
+        return device.peerID == connectedPeer
+    }
+
     private var session: ADBClipboardSession?
     private var task: Task<Void, Never>?
     private let defaults = UserDefaults.standard
@@ -96,6 +109,8 @@ final class ADBClipboard: ObservableObject {
         }
     }
 
+    static var adbExecutable: String? { adbPath }
+
     private static var adbPath: String? {
         ["/opt/homebrew/bin/adb", "/usr/local/bin/adb",
          NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb"]
@@ -103,6 +118,7 @@ final class ADBClipboard: ObservableObject {
     }
 
     func startUSB() {
+        paused = false
         start(.usb) { [weak self] session, helper in
             let serial = try session.usbSerial()
             try await session.listen(serial: serial, helper: helper, onReady: { [weak self] in
@@ -114,6 +130,7 @@ final class ADBClipboard: ObservableObject {
     }
 
     func startWiFi(device: ADBWirelessDevice, pairing: ADBPairing? = nil) {
+        paused = false
         start(.wifi) { [weak self] session, helper in
             var target = device
             if let pairing {
@@ -180,7 +197,8 @@ final class ADBClipboard: ObservableObject {
         }
     }
 
-    func stop() {
+    func stop(userInitiated: Bool = false) {
+        if userInitiated { paused = true }
         task?.cancel()
         session?.cancel()
         task = nil
@@ -215,6 +233,7 @@ final class ADBClipboard: ObservableObject {
         guard self.session === session else { return }
         stop()
         self.status = status
+        onEnded?()
     }
 }
 
@@ -339,7 +358,7 @@ final class ADBClipboardSession: @unchecked Sendable {
         _ = try capture(["connect", endpoint.address])
         let state = try capture(["-s", endpoint.address, "get-state"])
         guard state.1 == 0, String(decoding: state.0, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == "device" else {
-            throw NexusError.transfer("O ADB não conectou pelo Wi-Fi. Confira o pareamento e o IP e a porta da tela principal da Depuração sem fio.")
+            throw NexusError.transfer("O ADB não conectou pelo Wi-Fi. Se o celular reiniciou, conecte o cabo e use Configurar Wi-Fi para reativar; senão, confira o IP e a porta.")
         }
         return endpoint.address
     }
@@ -400,6 +419,26 @@ final class ADBClipboardSession: @unchecked Sendable {
             if let input = command.input { try? input.close() }
             else if command.process.isRunning { command.process.terminate() }
         }
+    }
+
+    static let mastersyncPackages = ["com.nexus.mastersync", "com.nexus.mastersync.direct"]
+
+    /// `am start` arguments that open MasterSync and let it accept scan `id` without asking. Quoted for the remote shell.
+    static func scanCameraArguments(serial: String, package: String, id: String) -> [String]? {
+        guard Wire.validID(id), mastersyncPackages.contains(package) else { return nil }
+        return ["-s", serial, "shell", "am", "start", "-n", "'\(package)/com.nexus.mastersync.MainActivity'",
+                "--es", "accept-scan", "'\(id)'"]
+    }
+
+    /// Opens MasterSync on the phone for scan `id`, trying the full edition first and then the direct one.
+    func openScanCamera(serial: String, requestID: String) throws {
+        for package in Self.mastersyncPackages {
+            guard let arguments = Self.scanCameraArguments(serial: serial, package: package, id: requestID) else { continue }
+            let result = try capture(arguments, diagnostics: true)
+            let output = String(decoding: result.0, as: UTF8.self).lowercased()
+            if result.1 == 0, !output.contains("error"), !output.contains("exception") { return }
+        }
+        throw NexusError.transfer("O Android não abriu a câmera do MasterSync.")
     }
 
     private func capture(_ arguments: [String], input: Data? = nil, diagnostics: Bool = false) throws -> (Data, Int32) {

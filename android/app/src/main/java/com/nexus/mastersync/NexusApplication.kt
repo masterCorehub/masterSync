@@ -130,6 +130,7 @@ class NexusController(val context: Context) {
     data class ScanRequest(val peer: String, val id: String?)
     private val scanRequest = MutableStateFlow<ScanRequest?>(null)
     val pendingScan = scanRequest.asStateFlow()
+    val scanAutoAccept = com.nexus.mastersync.services.ScanAutoAccept()
     private val photoRequest = MutableStateFlow<CameraRequest?>(null)
     val pendingPhoto = photoRequest.asStateFlow()
     private var capturingPhoto: CameraRequest? = null
@@ -423,6 +424,11 @@ class NexusController(val context: Context) {
                             .put("label", entry.loadLabel(manager).toString().take(70)))
                     }
                 client.sendTo(peer, Wire.message("launcherApps").put("launcherApps", apps))
+            }
+            "launcherIconsRequest" -> {
+                val components = com.nexus.mastersync.services.LauncherIcons.requested(message)
+                if (components.isEmpty()) return
+                client.sendTo(peer, com.nexus.mastersync.services.LauncherIcons.reply(context, components))
             }
             "adbProof" -> {
                 val nonce = message.optString("id")
