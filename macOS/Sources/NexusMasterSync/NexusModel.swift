@@ -160,6 +160,12 @@ final class NexusModel: ObservableObject {
 
     @Published var actionFeedback: String?
     @Published private(set) var mediaStatuses: [String: Message] = [:]
+    private var mediaReceivedAt: [String: Date] = [:]
+    /// Covers by track key, and the keys already asked for, so each cover is requested once.
+    @Published private(set) var mediaArt: [String: NSImage] = [:]
+    private var pendingMediaArt: Set<String> = []
+    @Published private(set) var mediaQueue: [MediaQueueItem] = []
+    @Published private(set) var mediaQueueActive: Int64?
 
     let clipboard: ClipboardSync
     let adbClipboard = ADBClipboard()
@@ -578,9 +584,45 @@ final class NexusModel: ObservableObject {
 
     func mediaControl(_ command: String) {
         guard canPlayMedia, let peer = selected else { return }
-        var message = Message("mediaCommand")
-        message.message = command
-        server?.send(message, to: peer.id)
+        server?.send(MediaCommands.command(command), to: peer.id)
+    }
+
+    /// The selected phone's media state, or nil when nothing is playing there.
+    var currentMediaState: MediaPlayerState? {
+        guard let message = currentMedia, let peer = selected?.id else { return nil }
+        let state = MediaPlayerState(message: message, receivedAt: mediaReceivedAt[peer] ?? .now)
+        return state.isEmpty ? nil : state
+    }
+
+    func mediaSeek(toFraction fraction: Double) {
+        guard canPlayMedia, let peer = selected, let state = currentMediaState, state.canSeek,
+              let duration = state.durationMs else { return }
+        server?.send(MediaCommands.command("seek", positionMs: MediaPlayerState.seekTarget(fraction: fraction, durationMs: duration)),
+                     to: peer.id)
+    }
+
+    func mediaLike(_ on: Bool) {
+        guard canPlayMedia, let peer = selected, currentMediaState?.canLike == true else { return }
+        server?.send(MediaCommands.command(on ? "like" : "unlike"), to: peer.id)
+    }
+
+    func mediaQueueRefresh() {
+        guard canPlayMedia, let peer = selected, currentMediaState?.hasQueue == true else { return }
+        server?.send(Message("mediaQueueRequest"), to: peer.id)
+    }
+
+    func mediaPlay(queueItem item: MediaQueueItem) {
+        guard canPlayMedia, let peer = selected else { return }
+        server?.send(MediaCommands.command("queueItem", queueId: item.id), to: peer.id)
+    }
+
+    private func requestMediaArtIfNeeded(for message: Message, peer: String) {
+        let key = MediaPlayerState(message: message, receivedAt: .now).artKey
+        guard MediaCommands.shouldRequestArt(key: key, cached: Set(mediaArt.keys), pending: pendingMediaArt), let key else { return }
+        pendingMediaArt.insert(key)
+        var request = Message("mediaArtRequest")
+        request.artKey = key
+        server?.send(request, to: peer)
     }
 
     @Published private(set) var launcherLists: [String: [AndroidApp]] = [:]
@@ -830,6 +872,12 @@ final class NexusModel: ObservableObject {
         for id in disconnected {
             permissions[id] = nil
             mediaStatuses[id] = nil
+            mediaReceivedAt[id] = nil
+            if id == selected?.id {
+                mediaQueue = []
+                mediaQueueActive = nil
+                pendingMediaArt = []
+            }
             screen.disconnect(id)
             files.disconnect(id)
             notifications.removePeer(id)
@@ -908,7 +956,26 @@ final class NexusModel: ObservableObject {
         case "notice", "noticeRemoved", "noticeSnapshot", "noticeDismissFailed":
             if permissions[peer]?.notifications == true { notifications.handle(message, peer: peer) }
         case "mediaStatus":
-            if permissions[peer]?.mediaControl == true { mediaStatuses[peer] = message }
+            if permissions[peer]?.mediaControl == true {
+                mediaStatuses[peer] = message
+                mediaReceivedAt[peer] = .now
+                requestMediaArtIfNeeded(for: message, peer: peer)
+            }
+        case "mediaArt":
+            if permissions[peer]?.mediaControl == true, let key = message.artKey {
+                let current = currentMedia.flatMap { MediaPlayerState(message: $0, receivedAt: .now).artKey }
+                pendingMediaArt.remove(key)
+                if let data = MediaCommands.acceptsArt(key: key, currentKey: current, data: message.data ?? ""),
+                   let image = NSImage(data: data) {
+                    if mediaArt.count >= 20 { mediaArt.removeAll() }
+                    mediaArt[key] = image
+                }
+            }
+        case "mediaQueue":
+            if permissions[peer]?.mediaControl == true, peer == selected?.id {
+                mediaQueue = Array((message.queue ?? []).prefix(30))
+                mediaQueueActive = message.queueId
+            }
         case "actionStatus":
             actionFeedback = Wire.visible(message.message ?? "", limit: 130)
         case "cameraStatus":
