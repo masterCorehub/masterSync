@@ -127,6 +127,21 @@ public struct Message: Codable {
     public var launcher: Bool?
     public var launcherApps: [AndroidApp]?
     public var launcherIcons: [AndroidAppIcon]?
+    public var artist: String?
+    public var albumName: String?
+    public var year: Int?
+    public var trackNumber: Int?
+    public var trackCount: Int?
+    public var durationMs: Int64?
+    public var positionMs: Int64?
+    public var speed: Double?
+    public var artKey: String?
+    public var canSeek: Bool?
+    public var canLike: Bool?
+    public var liked: Bool?
+    public var hasQueue: Bool?
+    public var queue: [MediaQueueItem]?
+    public var queueId: Int64?
     public var components: [String]?
     public var screenWidth: Int?
     public var screenHeight: Int?
@@ -138,6 +153,16 @@ public struct Message: Codable {
     public var quality: Int?
 
     public init(_ type: String) { self.type = type }
+}
+
+public struct MediaQueueItem: Codable, Identifiable, Equatable {
+    public let id: Int64
+    public let title: String
+
+    public init(id: Int64, title: String) {
+        self.id = id
+        self.title = title
+    }
 }
 
 public struct AndroidAppIcon: Codable {
