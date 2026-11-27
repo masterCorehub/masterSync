@@ -119,6 +119,15 @@ final class GalleryModel: ObservableObject {
         }
     }
 
+    /// Fills the gallery without a phone, for snapshot tests.
+    func loadForSnapshot(items: [MediaEntry], albums: [MediaAlbum], thumbnails: [String: NSImage], more: Bool = false) {
+        self.items = items
+        self.albums = albums
+        self.thumbnails = thumbnails
+        self.more = more
+        loading = false
+    }
+
     func loadIfNeeded() {
         guard !hasLoaded else { return }
         refresh()

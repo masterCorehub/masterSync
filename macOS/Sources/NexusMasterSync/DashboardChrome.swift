@@ -15,7 +15,8 @@ struct ContentHeader: View {
             Text(model.section.title)
                 .font(.system(size: 20, weight: .bold)).tracking(-0.2)
                 .accessibilityAddTraits(.isHeader)
-            Text(model.section.subtitle)
+            Text(model.section == .gallery && model.canBrowseGallery
+                 ? GalleryFormat.subtitle(count: gallery.items.count, more: gallery.more) : model.section.subtitle)
                 .font(.system(size: 12.5)).foregroundStyle(palette.muted).lineLimit(1)
             Spacer(minLength: 12)
             if hasGallerySearch { search }

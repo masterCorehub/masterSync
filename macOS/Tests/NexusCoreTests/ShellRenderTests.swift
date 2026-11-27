@@ -243,3 +243,69 @@ extension ShellRenderTests {
     }
 }
 
+
+
+// MARK: Gallery
+
+@MainActor
+extension ShellRenderTests {
+    private func makeTransfers() -> FileTransfers {
+        FileTransfers(storage: FileManager.default.temporaryDirectory.appendingPathComponent("gallery-render-\(UUID().uuidString)"), send: { _, _ in })
+    }
+
+    private func sampleMedia(count: Int) throws -> (GalleryModel, [MediaEntry]) {
+        let day: Int64 = 86_400
+        let base: Int64 = 1_764_000_000
+        let items: [MediaEntry] = try (0..<count).map { index in
+            let mime = index % 5 == 4 ? "video/mp4" : "image/jpeg"
+            let json = #"{"id":"\#(100 + index)","name":"PXL_\#(index).jpg","mime":"\#(mime)","album":"Câmera","at":\#(base - Int64(index / 6) * day),"size":2400000}"#
+            return try JSONDecoder().decode(MediaEntry.self, from: Data(json.utf8))
+        }
+        let albums = try ["Câmera", "Screenshots", "WhatsApp", "Downloads"].enumerated().map {
+            try JSONDecoder().decode(MediaAlbum.self, from: Data(#"{"id":"\#($0.offset + 1)","name":"\#($0.element)"}"#.utf8))
+        }
+        var thumbnails: [String: NSImage] = [:]
+        for (index, item) in items.enumerated() {
+            let image = NSImage(size: NSSize(width: 160, height: 160))
+            image.lockFocus()
+            NSGradient(colors: [NSColor(hue: CGFloat(index % 9) / 9, saturation: 0.5, brightness: 0.8, alpha: 1), .black])?
+                .draw(in: NSRect(x: 0, y: 0, width: 160, height: 160), angle: 90)
+            image.unlockFocus()
+            thumbnails[item.id] = image
+        }
+        let gallery = GalleryModel()
+        gallery.loadForSnapshot(items: items, albums: albums, thumbnails: thumbnails, more: true)
+        return (gallery, items)
+    }
+
+    func testGalleryRendersWithPhotos() throws {
+        let (gallery, _) = try sampleMedia(count: 18)
+        for scheme in [ColorScheme.dark, .light] {
+            let browser = GalleryBrowser(gallery: gallery, files: makeTransfers(), canTransfer: true, grouping: .constant(.day), deviceID: "phone")
+            let image = try render(browser, name: "fotos", scheme: scheme, width: 944, height: 1000)
+            XCTAssertEqual(image.size.width, 944, accuracy: 1)
+        }
+    }
+
+    func testGalleryRendersWhenNarrowAndEmpty() throws {
+        let gallery = GalleryModel()
+        _ = try render(GalleryBrowser(gallery: gallery, files: makeTransfers(), canTransfer: false, grouping: .constant(.day), deviceID: "phone"),
+                       name: "fotos-vazia", scheme: .dark, width: 484, height: 500)
+        let (full, _) = try sampleMedia(count: 12)
+        _ = try render(GalleryBrowser(gallery: full, files: makeTransfers(), canTransfer: true, grouping: .constant(.month), deviceID: "phone"),
+                       name: "fotos-estreita", scheme: .dark, width: 484, height: 900)
+    }
+
+    func testViewerRendersEveryState() throws {
+        let (gallery, items) = try sampleMedia(count: 6)
+        let photo = NSImage(size: NSSize(width: 400, height: 300))
+        photo.lockFocus(); NSColor.systemPink.setFill(); NSRect(x: 0, y: 0, width: 400, height: 300).fill(); photo.unlockFocus()
+        let states: [(String, GalleryModel.Preview.Content)] = [("imagem", .image(photo)), ("carregando", .loading), ("falhou", .failed("A prévia não chegou."))]
+        for (name, content) in states {
+            gallery.preview = GalleryModel.Preview(id: "p", item: items[1], fromTransfer: false, content: content)
+            let viewer = GalleryViewer(gallery: gallery, files: makeTransfers(), canTransfer: true, items: items, isFavorite: { _ in true }, toggleFavorite: { _ in })
+            let image = try render(viewer, name: "visualizador-\(name)", scheme: .dark, width: 980, height: 640)
+            XCTAssertEqual(image.size.height, 640, accuracy: 1)
+        }
+    }
+}

@@ -24,7 +24,13 @@ enum Section: String, CaseIterable, Identifiable {
     /// Chamadas, SMS e Webcam have a place in the menu but no feature behind them yet.
     var isComingSoon: Bool { self == .calls || self == .sms || self == .webcam }
 
-    var title: String { self == .overview ? "Visão geral" : rawValue }
+    var title: String {
+        switch self {
+        case .overview: "Visão geral"
+        case .gallery: "Fotos"
+        default: rawValue
+        }
+    }
 
     var subtitle: String {
         switch self {
