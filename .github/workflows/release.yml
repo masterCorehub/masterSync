@@ -46,6 +46,9 @@ jobs:
 
       - name: Configurar Android SDK (leitor ADB)
         uses: android-actions/setup-android@v3
+        with:
+          # O padrão da ação instala o pacote 'tools', que não existe mais; o passo seguinte instala o que o build usa.
+          packages: ''
 
       - name: Instalar Android Platform 36 e Build Tools
         run: |
@@ -107,6 +110,9 @@ jobs:
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # O padrão da ação instala o pacote 'tools', que não existe mais; o passo seguinte instala o que o build usa.
+          packages: ''
 
       - name: Instalar Android Platform 36 e Build Tools
         run: |
