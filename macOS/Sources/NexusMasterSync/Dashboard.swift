@@ -19,6 +19,8 @@ struct Dashboard: View {
     @State private var chatDraft = ""
     @State private var peerSearch = ""
     @State private var targetingFiles = false
+    @State private var miniPresentation = MiniPlayerPresentation()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showNotices = false
     @State private var connectionGuide = false
     @State private var confirmTemporaryConnection = false
@@ -71,8 +73,17 @@ struct Dashboard: View {
                         .padding(.horizontal, 23).padding(.top, 12).padding(.bottom, 19)
                 }
             }
+            .padding(.bottom, miniPlayerReserve)
         }
         .background { NexusBackdrop() }
+        .overlay(alignment: .bottomTrailing) { miniPlayerOverlay }
+        .task { volume = await outputVolume() }
+        .task(id: model.selected?.id) {
+            while !Task.isCancelled {
+                model.refreshMedia()
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            }
+        }
         .task(id: model.launcherAvailable && !(model.selected?.id ?? "").isEmpty ? model.selected?.id ?? "" : "") { model.refreshLauncher() }
         .task(id: launcherIconsKey) { model.requestLauncherIcons(for: launcherPins[model.selected?.id ?? ""] ?? []) }
         .foregroundStyle(palette.ink)
@@ -319,17 +330,22 @@ struct Dashboard: View {
             && !model.screen.preparingControl && !model.screen.inAppStarting
     }
 
-    private var audioPanel: some View {
+    /// The floating player: the phone's current track, collapsed or expanded, with the sound output choice.
+    @ViewBuilder private var miniPlayerOverlay: some View {
         let screen = model.screen
-        let state = model.currentMediaState
-        let output = MediaOutput.current(audioOnlyActive: screen.audioOnlyActive, controlActive: screen.usbActive)
-        return VStack(alignment: .leading, spacing: 11) {
-            MediaPlayerCard(
-                state: state, art: state?.artKey.flatMap { model.mediaArt[$0] }, queue: model.mediaQueue,
-                queueActive: model.mediaQueueActive, output: output, connecting: screen.connecting,
+        let media = model.currentMediaState
+        let track = MiniPlayerPresentation.trackKey(title: media?.title, artist: media?.artist)
+        let mode = miniPresentation.view(hasMedia: media != nil, track: track)
+        if let media, mode != .hidden {
+            let output = MediaOutput.current(audioOnlyActive: screen.audioOnlyActive, controlActive: screen.usbActive)
+            MiniPlayer(
+                state: media, art: media.artKey.flatMap { model.mediaArt[$0] }, phoneName: model.selected?.name ?? "Celular",
+                queue: model.mediaQueue, queueActive: model.mediaQueueActive, output: output, connecting: screen.connecting,
                 canControl: model.canPlayMedia,
                 // A scrcpy control window already owns the audio; ending it is done from its own button.
-                canChooseOutput: !(screen.usbActive && !screen.audioOnlyActive), palette: palette,
+                canChooseOutput: !(screen.usbActive && !screen.audioOnlyActive), expanded: mode == .full,
+                volume: output == .mac ? volume : nil,
+                onVolume: { level in Task { volume = await outputVolume(setTo: Int(level)) } },
                 onCommand: { model.mediaControl($0) }, onSeek: { model.mediaSeek(toFraction: $0) },
                 onLike: { model.mediaLike($0) }, onOpenQueue: { model.mediaQueueRefresh() },
                 onPick: { model.mediaPlay(queueItem: $0) },
@@ -342,33 +358,19 @@ struct Dashboard: View {
                     case .phone:
                         screen.stopUSB()
                     }
-                })
-            if output == .mac, let volume {
-                HStack {
-                    Slider(value: Binding(get: { self.volume ?? volume }, set: { self.volume = $0 }),
-                           in: 0...100, step: 1) {
-                        Label("Volume no Mac", systemImage: "speaker.wave.2")
-                    } onEditingChanged: { editing in
-                        if !editing, let level = self.volume {
-                            Task {
-                                // Apply the volume to the current macOS output.
-                                self.volume = await outputVolume(setTo: Int(level))
-                            }
-                        }
-                    }
-                    Text("\(Int(volume))%").monospacedDigit()
-                }
-                .padding(.horizontal, 6)
-            }
-            if let feedback = screen.feedback { empty(feedback) }
+                },
+                onToggleExpanded: { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { miniPresentation.toggleExpanded() } },
+                onClose: { miniPresentation.dismiss(track: track) })
+            .padding(.trailing, 24).padding(.bottom, 20)
+            .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottomTrailing)))
         }
-        .task { volume = await outputVolume() }
-        .task(id: model.selected?.id) {
-            while !Task.isCancelled {
-                model.refreshMedia()
-                do { try await Task.sleep(for: .seconds(3)) } catch { return }
-            }
-        }
+    }
+
+    /// Room kept under the screens so the collapsed player does not cover their lower right corner.
+    private var miniPlayerReserve: CGFloat {
+        let media = model.currentMediaState
+        let track = MiniPlayerPresentation.trackKey(title: media?.title, artist: media?.artist)
+        return miniPresentation.view(hasMedia: media != nil, track: track) == .mini ? 84 : 0
     }
 
     private func outputVolume(setTo level: Int? = nil) async -> Double? {
