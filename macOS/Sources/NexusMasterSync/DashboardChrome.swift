@@ -27,7 +27,7 @@ private enum SectionGroup: String, CaseIterable {
     init(section: Section) {
         switch section {
         case .conversation: self = .conversation
-        case .overview, .clipboard, .notifications, .remote: self = .home
+        case .overview, .clipboard, .notifications, .remote, .apps, .calls, .sms, .webcam: self = .home
         case .gallery, .documents, .files: self = .library
         case .devices, .settings: self = .connection
         }

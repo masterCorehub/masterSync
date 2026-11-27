@@ -12,12 +12,45 @@ enum Section: String, CaseIterable, Identifiable {
     case files = "Arquivos"
     case notifications = "Notificações"
     case remote = "Controle remoto"
+    case apps = "Apps"
+    case calls = "Chamadas"
+    case sms = "SMS e RCS"
+    case webcam = "Webcam"
     case devices = "Dispositivos"
     case settings = "Configurações"
 
     var id: String { rawValue }
+
+    /// Chamadas, SMS e Webcam have a place in the menu but no feature behind them yet.
+    var isComingSoon: Bool { self == .calls || self == .sms || self == .webcam }
+
+    var title: String { self == .overview ? "Visão geral" : rawValue }
+
+    var subtitle: String {
+        switch self {
+        case .overview: "Tudo do seu celular, num só lugar"
+        case .conversation: "Conversa e arquivos com o celular"
+        case .clipboard: "O que você copia, nos dois aparelhos"
+        case .documents: "Digitalizações do celular"
+        case .gallery: "Fotos e vídeos do celular"
+        case .files: "Enviados e recebidos"
+        case .notifications: "Espelhadas em tempo real"
+        case .remote: "Controle o celular pelo Mac"
+        case .apps: "Abra os apps do celular no Mac"
+        case .calls: "Atenda e ligue pelo Mac"
+        case .sms: "Mensagens do celular no Mac"
+        case .webcam: "A câmera do celular como webcam"
+        case .devices: "Celulares conectados e pareamento"
+        case .settings: "Aparência, atalhos e conexão"
+        }
+    }
+
     var icon: String {
         switch self {
+        case .apps: "square.grid.2x2"
+        case .calls: "phone"
+        case .sms: "message"
+        case .webcam: "video"
         case .overview: "iphone"
         case .conversation: "bubble.left.and.bubble.right"
         case .clipboard: "document.on.clipboard"

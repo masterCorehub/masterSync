@@ -194,6 +194,7 @@ struct Dashboard: View {
                         case .notifications: notifications
                         case .remote: remote
                         case .settings: settings
+                        case .apps, .calls, .sms, .webcam: EmptyView()
                         }
                     }
                     .padding(.horizontal, 28)
