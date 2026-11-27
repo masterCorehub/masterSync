@@ -25,7 +25,7 @@ final class ShellRenderTests: XCTestCase {
     func render<V: View>(_ view: V, name: String, scheme: ColorScheme, width: CGFloat, height: CGFloat) throws -> NSImage {
         let palette = NexusPalette(scheme: scheme)
         let framed = view.frame(width: width, height: height).background(palette.canvas)
-            .environment(\.colorScheme, scheme).foregroundStyle(palette.ink)
+            .environment(\.colorScheme, scheme).environment(\.nexusFlatBackdrop, true).foregroundStyle(palette.ink)
         let renderer = ImageRenderer(content: framed)
         renderer.scale = 1
         let image = try XCTUnwrap(renderer.nsImage, "\(name) não renderizou")
@@ -81,5 +81,21 @@ final class ShellRenderTests: XCTestCase {
     func testOverviewRendersInANarrowWindow() throws {
         _ = try render(OverviewScreen(data: overviewData(connected: true), actions: OverviewActions(), extras: AnyView(EmptyView())),
                        name: "visao-geral-estreita", scheme: .dark, width: 484, height: 900)
+    }
+
+    // MARK: Whole window
+
+    /// Smoke test: the whole window builds and draws for every section without a connected phone. (Scrolling content does not
+    /// show in ImageRenderer, so the sidebar is what makes the image non-blank; the per-screen checks cover their own views.)
+    func testEverySectionRendersInTheWindow() throws {
+        let model = NexusModel()
+        for section in Section.allCases {
+            model.section = section
+            for scheme in [ColorScheme.dark, .light] {
+                let image = try render(Dashboard(model: model), name: "janela-\(section.id.lowercased().replacingOccurrences(of: " ", with: "-"))",
+                                       scheme: scheme, width: 1240, height: 790)
+                XCTAssertEqual(image.size.width, 1240, accuracy: 1, "\(section)")
+            }
+        }
     }
 }

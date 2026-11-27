@@ -19,6 +19,7 @@ struct Dashboard: View {
     @State private var launcherSearch = ""
     @AppStorage("android-launcher-pins") private var storedLauncherPins = Data()
     @State private var chatDraft = ""
+    @State private var peerSearch = ""
     @State private var showNotices = false
     @State private var connectionGuide = false
     @State private var confirmTemporaryConnection = false
@@ -54,7 +55,7 @@ struct Dashboard: View {
                 if model.section == .conversation {
                     conversationPanel
                         .padding(.horizontal, 26)
-                        .padding(.bottom, 22)
+                        .padding(.bottom, 26)
                         .onChange(of: model.selected?.id) { _, _ in chatDraft = "" }
                         .onChange(of: latestScanPage?.id) { _, page in
                             if page != nil { model.section = .documents }
@@ -635,25 +636,86 @@ struct Dashboard: View {
     }
 
     private var conversationPanel: some View {
+        GeometryReader { area in
+            HStack(spacing: 16) {
+                if area.size.width >= 700 { conversationList.frame(width: 280) }
+                conversationThread
+            }
+        }
+        .frame(maxWidth: 1200, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func initials(_ name: String) -> String {
+        name.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased()
+    }
+
+    private func hue(for id: String) -> Double { Double(id.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) % 360 }) }
+
+    private var conversationList: some View {
+        let peers = model.peers.filter { peerSearch.isEmpty || $0.name.localizedCaseInsensitiveContains(peerSearch) }
+        return VStack(spacing: 2) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(palette.muted)
+                TextField("Buscar conversas", text: $peerSearch).textFieldStyle(.plain)
+            }
+            .font(.system(size: 13))
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(palette.input, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.bottom, 6)
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(peers) { peer in
+                        let last = (model.messages.filter { $0.peer == peer.id }.map { ($0.date, ($0.outgoing ? "Você: " : "") + $0.text) }
+                            + model.files.received.filter { $0.peerID == peer.id }.map { ($0.date, $0.offer.name) })
+                            .max { $0.0 < $1.0 }
+                        Button { model.selectedID = peer.id } label: {
+                            HStack(spacing: 10) {
+                                Avatar(initials: initials(peer.name), hue: hue(for: peer.id), size: 38)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack {
+                                        Text(peer.name).font(.system(size: 13.5, weight: .semibold)).lineLimit(1)
+                                        Spacer(minLength: 6)
+                                        if let last { Text(last.0, style: .time).font(.system(size: 11)).foregroundStyle(palette.faint) }
+                                    }
+                                    Text(last.map { Wire.visible($0.1, limit: 80) } ?? (model.online.contains(peer.id) ? "Conectado" : "Desconectado"))
+                                        .font(.system(size: 12.5)).foregroundStyle(palette.muted).lineLimit(1)
+                                }
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(model.selected?.id == peer.id ? palette.active : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(model.selected?.id == peer.id ? .isSelected : [])
+                    }
+                }
+            }
+        }
+        .padding(8)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .glassPanel(radius: 20)
+    }
+
+    private var conversationThread: some View {
         let entries = conversationEntries
+        let phone = model.selected?.name ?? "Conversa"
         return VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Image(systemName: "iphone")
-                    .foregroundStyle(palette.accent)
-                    .frame(width: 38, height: 38)
-                    .background(palette.accentSurface, in: RoundedRectangle(cornerRadius: 11))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(model.selected?.name ?? "Conversa").font(.headline)
-                    Label(model.active ? "Conectado" : "Desconectado",
-                          systemImage: model.active ? "wifi" : "wifi.slash")
-                        .font(.caption).foregroundStyle(model.active ? palette.connected : palette.muted)
+                Avatar(initials: initials(phone), hue: hue(for: model.selected?.id ?? ""), size: 36)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(phone).font(.system(size: 14, weight: .bold)).lineLimit(1)
+                    Text(model.active ? "Conectado · Wi‑Fi" : "Desconectado")
+                        .font(.system(size: 11.5)).foregroundStyle(model.active ? palette.accent : palette.muted)
                 }
                 Spacer()
-            }.padding(16)
-            Divider()
+            }
+            .padding(.horizontal, 18).padding(.vertical, 14)
+            Rectangle().fill(palette.line).frame(height: 1)
             ScrollViewReader { scroll in
                 ScrollView {
-                    LazyVStack(spacing: 12) {
+                    LazyVStack(spacing: 8) {
                         if entries.isEmpty {
                             VStack(spacing: 8) {
                                 Image(systemName: "bubble.left.and.bubble.right").font(.title2)
@@ -666,33 +728,41 @@ struct Dashboard: View {
                         ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                             if index == 0 || !calendar.isDate(entries[index - 1].date, inSameDayAs: entry.date) {
                                 Text(entry.date, style: .date)
-                                    .font(.caption.weight(.medium)).foregroundStyle(palette.muted)
-                                    .padding(.horizontal, 10).padding(.vertical, 4)
-                                    .background(palette.control, in: Capsule())
+                                    .font(.system(size: 11)).foregroundStyle(palette.faint)
+                                    .padding(.bottom, 6)
                             }
                             conversationBubble(entry).id(entry.id)
                         }
                     }
-                    .padding(22)
+                    .padding(18)
                 }
                 .frame(maxHeight: .infinity)
                 .onChange(of: entries.last?.id, initial: true) { _, id in
                     if let id { scroll.scrollTo(id, anchor: .bottom) }
                 }
             }
-            Divider()
+            Rectangle().fill(palette.line).frame(height: 1)
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Button { imported = true } label: { Image(systemName: "paperclip") }
-                        .buttonStyle(NexusPillStyle(compact: true)).disabled(!model.canSendFiles)
-                        .help("Enviar arquivo").accessibilityLabel("Enviar arquivo")
+                HStack(spacing: 10) {
+                    Button { imported = true } label: {
+                        Image(systemName: "plus.circle").font(.system(size: 21)).foregroundStyle(palette.muted)
+                    }
+                    .buttonStyle(.plain).disabled(!model.canSendFiles)
+                    .help("Enviar arquivo").accessibilityLabel("Enviar arquivo")
                     TextField(model.canChat ? "Mensagem" : "Conversa indisponível", text: $chatDraft)
-                        .textFieldStyle(.roundedBorder).disabled(!model.canChat)
+                        .textFieldStyle(.plain).font(.system(size: 13.5))
+                        .padding(.horizontal, 14).padding(.vertical, 9)
+                        .background(palette.input, in: Capsule())
+                        .overlay { Capsule().strokeBorder(palette.line) }
+                        .disabled(!model.canChat)
                         .onSubmit { sendChatDraft() }
-                    Button { sendChatDraft() } label: { Image(systemName: "arrow.up") }
-                        .buttonStyle(NexusPillStyle(prominent: true, compact: true))
-                        .disabled(!model.canChat || chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatDraft.utf8.count > 2048)
-                        .help("Enviar mensagem").accessibilityLabel("Enviar mensagem")
+                    Button { sendChatDraft() } label: {
+                        Image(systemName: "arrow.up").font(.system(size: 15, weight: .bold)).foregroundStyle(palette.accentInk)
+                            .frame(width: 36, height: 36).background(palette.fill, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!model.canChat || chatDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatDraft.utf8.count > 2048)
+                    .help("Enviar mensagem").accessibilityLabel("Enviar mensagem")
                 }
                 ForEach(model.files.progress.filter { $0.peer == model.selected?.id }) { item in
                     ProgressView(value: item.fraction) { Text(item.name).lineLimit(1) }
@@ -704,46 +774,50 @@ struct Dashboard: View {
                 }
                 if let feedback = model.files.feedback { empty(feedback) }
             }
-            .padding(14)
+            .padding(12)
         }
-        .frame(maxWidth: 1200, maxHeight: .infinity)
-        .nexusPanel(palette, radius: 20)
-        .frame(maxWidth: .infinity)
+        .frame(maxHeight: .infinity)
+        .glassPanel(radius: 20)
     }
-
 
     private func sendChatDraft() {
         if model.sendChat(chatDraft) { chatDraft = "" }
     }
 
     private func conversationBubble(_ entry: ConversationEntry) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(ChatMedia.senderName(outgoing: entry.outgoing, local: ChatMedia.localDeviceName,
-                                      peer: model.selected?.name ?? ""))
-                .font(.caption2.weight(.semibold)).foregroundStyle(palette.muted).lineLimit(1)
-            switch entry {
-            case .text(let message):
-                Text(message.text).textSelection(.enabled)
-                if message.outgoing && !message.confirmed {
-                    Text("Sem confirmação").font(.caption2).foregroundStyle(palette.muted)
-                }
-            case .file(let item, _):
-                if ChatMedia.isImage(mime: item.offer.mime) {
-                    ChatImage(item: item) { preview = item.url }
-                } else {
-                    Button { preview = item.url } label: {
-                        Label(item.offer.name, systemImage: "doc").lineLimit(2)
+        let mine = entry.outgoing
+        let shape = UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: mine ? 18 : 6,
+                                           bottomTrailingRadius: mine ? 6 : 18, topTrailingRadius: 18, style: .continuous)
+        return VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(ChatMedia.senderName(outgoing: mine, local: ChatMedia.localDeviceName, peer: model.selected?.name ?? ""))
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(mine ? palette.accentInk.opacity(0.7) : palette.muted).lineLimit(1)
+                switch entry {
+                case .text(let message):
+                    Text(message.text).font(.system(size: 13.5)).lineSpacing(2).textSelection(.enabled)
+                case .file(let item, _):
+                    if ChatMedia.isImage(mime: item.offer.mime) {
+                        ChatImage(item: item) { preview = item.url }
+                    } else {
+                        Button { preview = item.url } label: {
+                            Label(item.offer.name, systemImage: "doc").lineLimit(2)
+                        }
+                        .buttonStyle(.plain).disabled(!FileManager.default.fileExists(atPath: item.url.path))
                     }
-                    .buttonStyle(.plain).disabled(!FileManager.default.fileExists(atPath: item.url.path))
                 }
             }
-            Text(entry.date, style: .time)
-                .font(.caption2).foregroundStyle(palette.muted)
+            .foregroundStyle(mine ? palette.accentInk : palette.ink)
+            .padding(.vertical, 9).padding(.horizontal, 13)
+            .background(mine ? palette.fill : palette.panel2, in: shape)
+            .overlay { if !mine { shape.strokeBorder(palette.line) } }
+            HStack(spacing: 6) {
+                Text(entry.date, style: .time)
+                if case .text(let message) = entry, mine, !message.confirmed { Text("Sem confirmação") }
+            }
+            .font(.system(size: 10.5)).foregroundStyle(palette.faint).padding(.horizontal, 6)
         }
-        .padding(.vertical, 9).padding(.horizontal, 13)
-        .background(entry.outgoing ? palette.accentSurface : palette.control, in: RoundedRectangle(cornerRadius: 12))
-        .frame(maxWidth: 560, alignment: entry.outgoing ? .trailing : .leading)
-        .frame(maxWidth: .infinity, alignment: entry.outgoing ? .trailing : .leading)
+        .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
     }
 
     private var androidDndToggle: some View {

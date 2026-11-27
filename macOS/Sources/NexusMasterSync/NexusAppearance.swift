@@ -59,14 +59,25 @@ struct NexusPalette {
     }
 }
 
+private struct FlatBackdropKey: EnvironmentKey { static let defaultValue = false }
+
+extension EnvironmentValues {
+    /// Draws the plain window color instead of the native glass, which ImageRenderer cannot show (used by snapshot tests).
+    var nexusFlatBackdrop: Bool {
+        get { self[FlatBackdropKey.self] }
+        set { self[FlatBackdropKey.self] = newValue }
+    }
+}
+
 struct NexusBackdrop: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.nexusFlatBackdrop) private var flat
 
     var body: some View {
         let palette = NexusPalette(scheme: scheme)
         ZStack {
-            if reduceTransparency {
+            if reduceTransparency || flat {
                 palette.canvas
             } else {
                 GlassBackground()

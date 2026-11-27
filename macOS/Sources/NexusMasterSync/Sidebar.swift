@@ -107,7 +107,7 @@ struct Sidebar: View {
                     .frame(width: compact ? 18 : 22)
                     .foregroundStyle(selected ? palette.accent : palette.muted)
                 Text(item.section.title)
-                    .font(.system(size: compact ? 12.5 : 13.5, weight: selected ? .semibold : .regular)).lineLimit(1)
+                    .font(.system(size: compact ? 12.5 : 13.5, weight: selected ? .semibold : .regular)).lineLimit(1).minimumScaleFactor(0.8)
                 Spacer(minLength: 0)
                 if let badge = item.badge {
                     Text("\(badge)")
