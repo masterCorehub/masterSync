@@ -21,6 +21,8 @@ final class FileTransfers: ObservableObject {
         let size: Int64
         var offset: Int64
         var verifying = false
+        /// A page from the phone's document scanner, which the Mac announces with a pop-up.
+        var scan = false
 
         var fraction: Double { size == 0 ? 0 : Double(offset) / Double(size) }
     }
@@ -309,7 +311,7 @@ final class FileTransfers: ObservableObject {
 
     private func update(_ offer: FileOffer, peer: String, sending: Bool, offset: Int64, verifying: Bool = false) {
         let record = Progress(id: offer.id, name: offer.name, peer: peer, sending: sending,
-                              size: offer.size, offset: offset, verifying: verifying)
+                              size: offer.size, offset: offset, verifying: verifying, scan: offer.isScanPage)
         if let index = progress.firstIndex(where: { $0.id == offer.id && $0.peer == peer }) { progress[index] = record }
         else { progress.append(record) }
     }

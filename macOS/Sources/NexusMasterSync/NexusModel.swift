@@ -216,6 +216,7 @@ final class NexusModel: ObservableObject {
     let gallery = GalleryModel()
     let screen = ScreenMirror()
     let files: FileTransfers
+    private var scanPopup: ScanPopupController?
     private let preferences = UserDefaults.standard
     private let shareService = AndroidShareService()
     private var presentingShareFailure = false
@@ -337,6 +338,7 @@ final class NexusModel: ObservableObject {
     var canRequestScan: Bool { selected.map { canSendFiles && permissions[$0.id]?.scanner == true } ?? false }
 
     func launch() {
+        if scanPopup == nil { scanPopup = ScanPopupController(files: files) }
         if quitObserver == nil {
             quitObserver = NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification).sink { [weak self] _ in
                 self?.clearShareDestination()
