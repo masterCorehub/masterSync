@@ -74,6 +74,16 @@ struct GalleryBrowser: View {
             }
         }
         .onAppear { gallery.refresh() }
+        // New photos appear on their own: every 20 s while this screen is open, and when the app comes back to the front.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(20))
+                gallery.refreshIfStale(maxAge: 19)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            gallery.refreshIfStale(maxAge: 5)
+        }
         .onChange(of: gallery.filters) { gallery.filtersChanged() }
         .onChange(of: visibleItems.map(\.id)) { _, ids in selection.prune(keeping: Set(ids)) }
         .sheet(isPresented: Binding(get: { gallery.preview != nil }, set: { if !$0 { gallery.preview = nil } })) {

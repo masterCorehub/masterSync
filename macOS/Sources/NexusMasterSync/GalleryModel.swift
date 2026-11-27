@@ -89,6 +89,9 @@ final class GalleryModel: ObservableObject {
     private var asked: Set<String> = []
     private var offset: Int64 = 0
     private var hasLoaded = false
+    /// The next first page replaces the list instead of adding to it, so refreshing never empties what is on screen.
+    private var replacing = false
+    private(set) var lastLoad: Date?
     private var reload: Task<Void, Never>?
     private var originalRequests: [String: String] = [:]
     private var originals: [String: URL] = [:]
@@ -111,6 +114,8 @@ final class GalleryModel: ObservableObject {
         feedback = nil
         preview = nil
         hasLoaded = false
+        replacing = false
+        lastLoad = nil
         originalRequests = [:]
         originals = [:]
         if let peer, libraryPeer != peer {
@@ -154,10 +159,20 @@ final class GalleryModel: ObservableObject {
 
     private func restartPage() {
         reload?.cancel()
-        items = []
+        replacing = true
         offset = 0
-        more = false
         page()
+    }
+
+    nonisolated static func isStale(lastLoad: Date?, now: Date, maxAge: TimeInterval) -> Bool {
+        guard let lastLoad else { return true }
+        return now.timeIntervalSince(lastLoad) >= maxAge
+    }
+
+    /// Reloads the first page when the list is older than [maxAge] seconds (new photos may have been taken since).
+    func refreshIfStale(maxAge: TimeInterval = 20) {
+        guard peer != nil, !loading, Self.isStale(lastLoad: lastLoad, now: .now, maxAge: maxAge) else { return }
+        refresh()
     }
 
     func page() {
@@ -176,6 +191,7 @@ final class GalleryModel: ObservableObject {
             if request == id {
                 request = nil
                 loading = false
+                replacing = false
                 feedback = "A galeria não respondeu. Confira a conexão do Android."
             }
         }
@@ -250,9 +266,17 @@ final class GalleryModel: ObservableObject {
             guard let request, request == message.id, let media = message.media, media.count <= 24 else { return }
             self.request = nil
             loading = false
-            var known = Set(items.map(\.id))
-            items.append(contentsOf: media.filter { Int64($0.id) != nil && known.insert($0.id).inserted })
-            offset += Int64(media.count)
+            if replacing {
+                replacing = false
+                var seen = Set<String>()
+                items = media.filter { Int64($0.id) != nil && seen.insert($0.id).inserted }
+                offset = Int64(media.count)
+                lastLoad = .now
+            } else {
+                var known = Set(items.map(\.id))
+                items.append(contentsOf: media.filter { Int64($0.id) != nil && known.insert($0.id).inserted })
+                offset += Int64(media.count)
+            }
             more = !media.isEmpty && message.more == true
         case "galleryAlbumList":
             albums = Array((message.albums ?? []).prefix(128))
