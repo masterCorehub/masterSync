@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>masterSync — Seu Android, dentro do Mac</title>
+<meta name="description" content="Notificações, SMS, fotos, arquivos e controle do celular Android direto no Mac. Pela sua rede, sem nuvem.">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="assets/logo.png">
+<script>
+  // Aplica o tema salvo antes da primeira pintura, para não piscar.
+  try { var t = localStorage.getItem('mastersync-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="ambient" aria-hidden="true"><i class="blob a"></i><i class="blob b"></i><i class="blob c"></i><i class="blob d"></i></div>
+
+<div class="page">
+  <!-- Barra de menus do macOS -->
+  <header class="menubar">
+    <a class="brand" href="#topo" aria-label="masterSync, início"><img src="assets/logo.png" alt="">masterSync</a>
+    <nav aria-label="Seções">
+      <a href="#experimente">Experimente</a>
+      <a href="#recursos">Recursos</a>
+      <a class="hide-sm" href="#privacidade">Privacidade</a>
+      <a href="#baixar">Baixar</a>
+    </nav>
+    <div class="spacer"></div>
+    <div class="status">
+      <button class="theme-btn" id="themeBtn" type="button" aria-label="Mudar tema" title="Mudar tema">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path id="themeIcon" d=""></path></svg>
+      </button>
+      <svg class="hide-sm" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" role="img" aria-label="Wi‑Fi conectado"><path d="M2 8.8a15 15 0 0 1 20 0M5 12.6a10 10 0 0 1 14 0M8.5 16.4a5 5 0 0 1 7 0M12 20h.01"/></svg>
+      <span class="hide-sm num"><svg width="24" height="13" viewBox="0 0 26 13" fill="none" aria-hidden="true"><rect x=".75" y=".75" width="21.5" height="11.5" rx="3.2" stroke="currentColor" stroke-width="1.3" opacity=".6"/><rect x="2.5" y="2.5" width="15" height="8" rx="1.6" fill="currentColor"/><path d="M24 4.5v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".6"/></svg>82%</span>
+      <span class="num" id="clock">sex 27 nov 12:16</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section class="hero" id="topo">
+      <h1>Seu Android,<br><em>dentro do Mac.</em></h1>
+      <p class="sub">Notificações, SMS, fotos e arquivos. Pela sua rede, sem nuvem.</p>
+      <div class="cta-row">
+        <a class="btn primary" href="#baixar">Baixar grátis</a>
+        <a class="btn ghost" href="#experimente">Experimentar
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg></a>
+      </div>
+
+      <div class="scene" role="img" aria-label="Um Mac com a janela do masterSync aberta e um celular Android ao lado; notificações saem do celular e chegam ao Mac">
+        <svg class="arc" aria-hidden="true" viewBox="0 0 1600 1000" preserveAspectRatio="none"><path d="M1150 330 C 1000 120, 820 140, 640 300" fill="none" stroke="#5ed8a9" stroke-width="3" stroke-dasharray="6 14" stroke-linecap="round" opacity=".7" style="animation: dash 3s linear infinite"/></svg>
+
+        <div class="macwin">
+          <div class="titlebar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span>masterSync</span></div>
+          <img id="heroShot" src="assets/visao-geral-escuro.png" alt="">
+        </div>
+
+        <div class="phone">
+          <div class="body"><div class="screen">
+            <i class="cam"></i>
+            <div class="status num"><span>12:16</span><span>●●</span></div>
+            <div class="clock num"><b>12:16</b><small>sexta, 27 de novembro</small></div>
+            <div class="card"><img src="assets/logo.png" alt=""><div><strong>masterSync</strong><small><i></i>Conectado ao MacBook</small></div></div>
+            <div class="msg"><span class="av">R</span><div style="min-width:0"><strong>Rafa</strong><small>Bora no futebol quinta?</small></div></div>
+            <div class="grow"></div>
+            <div class="apps"><i style="background:#1e8c4e"></i><i style="background:#2c7bc4"></i><i style="background:#c4271f"></i><i style="background:#7a3fc4"></i></div>
+            <span class="bar"></span>
+          </div></div>
+        </div>
+
+        <div class="flyer" aria-hidden="true" style="animation-delay:.8s"><div class="pill"><span class="dot" style="background:#1e8c4e">W</span>Rafa: Bora no futebol?</div></div>
+        <div class="flyer" aria-hidden="true" style="animation-delay:2.8s"><div class="pill"><span class="dot" style="background:var(--fill);color:var(--accent-ink)"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4"/></svg></span><span class="mono" style="letter-spacing:.08em">482 913</span></div></div>
+        <div class="flyer" aria-hidden="true" style="animation-delay:4.8s"><div class="pill"><span class="dot" style="background:linear-gradient(160deg,#8e3b3b,#e07a6a);border-radius:.5cqw"></span><span class="mono">IMG_2104.jpg</span></div></div>
+
+        <div class="dock" aria-hidden="true">
+          <i style="background:linear-gradient(160deg,#6ba4ff,#3461ac)"></i>
+          <i style="background:linear-gradient(160deg,#f3f4f6,#a3a5a9)"></i>
+          <i style="background:linear-gradient(160deg,#f0904a,#c4271f)"></i>
+          <span class="self"><img src="assets/logo.png" alt=""></span>
+          <i style="background:linear-gradient(160deg,#5ed8a9,#0e7a5a)"></i>
+          <i style="background:linear-gradient(160deg,#a78bfa,#5b3fc4)"></i>
+          <hr>
+          <i class="glass" style="box-sizing:border-box"></i>
+        </div>
+      </div>
+    </section>
+
+    <!-- Simulador -->
+    <section id="experimente">
+      <div class="reveal" style="display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px">
+        <h2 class="section-title">Experimente.</h2>
+        <p class="section-sub">Clique em tudo. É o app, simulado.</p>
+      </div>
+      <div class="reveal"><div class="sim" id="sim" aria-label="Simulação do app masterSync para Mac"></div></div>
+    </section>
+
+    <!-- Blocos -->
+    <section id="recursos">
+      <h2 class="section-title reveal">Tudo o que importa.<br><span>Nada que atrapalhe.</span></h2>
+      <div class="bento">
+
+        <div class="tile glass reveal span2">
+          <div class="art" aria-hidden="true" style="padding:28px 28px 0;display:flex;flex-direction:column;gap:8px;align-items:center">
+            <div class="mini-notif"><span class="ic">W</span><span class="t"><strong style="font-size:14px">Rafa</strong><small>Bora no futebol quinta?</small></span><small style="font-size:12px;color:var(--faint)">agora</small></div>
+            <div class="ghost-notif" style="width:94%;max-width:396px;opacity:.75"><i style="width:32px;height:32px;background:#7a3fc4"></i><b></b></div>
+            <div class="ghost-notif" style="width:88%;max-width:372px;opacity:.45;padding:9px 14px"><i style="width:28px;height:28px;background:#b35a0a"></i><b></b></div>
+          </div>
+          <div class="tcap"><h3>Notificações</h3><p>Dispensou no Mac, some no celular.</p></div>
+        </div>
+
+        <div class="tile glass reveal">
+          <div class="art" aria-hidden="true" style="padding:28px 24px 0;display:flex;flex-direction:column;gap:8px;justify-content:flex-end">
+            <span class="bubble in">Chegou?</span><span class="bubble out">Tô aqui embaixo</span><span class="typing"><i></i><i></i><i></i></span>
+          </div>
+          <div class="tcap"><h3>SMS</h3><p>Responda pelo teclado.</p></div>
+        </div>
+
+        <div class="tile glass reveal">
+          <div class="art" aria-hidden="true">
+            <div class="thumbs"><i style="background:linear-gradient(160deg,#8e3b3b,#e07a6a)"></i><i style="background:linear-gradient(160deg,#5e6b1f,#b9d16a)"></i><i style="background:linear-gradient(160deg,#1d5c4e,#6fd6b4)"></i><i style="background:linear-gradient(160deg,#2e2f7a,#7c82e6)"></i><i style="background:linear-gradient(160deg,#6a2350,#e07ab5)"></i><i style="background:linear-gradient(160deg,#7a4a1a,#f0b36a)"></i></div>
+            <span class="shine"></span>
+          </div>
+          <div class="tcap"><h3>Fotos</h3><p>A galeria, atualizada sozinha.</p></div>
+        </div>
+
+        <div class="tile glass reveal">
+          <div class="art" aria-hidden="true"><div class="transfer">
+            <div class="row">
+              <span class="dev"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/></svg></span>
+              <span class="lane"><span class="file"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5"/></svg></span></span>
+              <span class="dev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg></span>
+            </div>
+            <div><div class="meta"><span>Roteiro.pdf</span><span>4,2 MB</span></div><span class="bar" style="margin-top:6px"><i></i></span></div>
+          </div></div>
+          <div class="tcap"><h3>Arquivos</h3><p>Arraste e solte.</p></div>
+        </div>
+
+        <div class="tile glass reveal">
+          <div class="art" aria-hidden="true"><div class="otp-art">
+            <span class="otp-ring"><svg width="56" height="56" viewBox="0 0 56 56"><circle cx="28" cy="28" r="24" fill="none" stroke="var(--track)" stroke-width="4"/><circle class="v" cx="28" cy="28" r="24" fill="none" stroke="#0bc18d" stroke-width="4" stroke-linecap="round"/></svg>
+              <svg class="lock" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute"><path d="M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+            <span style="display:flex;flex-direction:column;gap:4px"><span class="otp-code num">482 913</span><span class="chip-ok" style="align-self:flex-start">Copiado</span></span>
+          </div></div>
+          <div class="tcap"><h3>Códigos 2FA</h3><p>Copiados sozinhos. Somem em 2 min.</p></div>
+        </div>
+
+        <div class="tile glass reveal">
+          <div class="art" aria-hidden="true"><div class="ctl-art"><div class="mini-phone">
+            <div class="grid"><i style="background:#1e8c4e"></i><i style="background:#2c7bc4"></i><i style="background:#c4271f"></i><i style="background:#7a3fc4"></i><i style="background:#b8457a"></i><i style="background:#1f86a8"></i><i style="background:#b35a0a"></i><i style="background:#14783f"></i><i style="background:#2477b8"></i></div>
+            <svg class="cur" width="22" height="22" viewBox="0 0 24 24"><path d="M5 3l14 7-6 2-2 6z" fill="#fff" stroke="#14161b" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          </div></div></div>
+          <div class="tcap"><h3>Controle</h3><p>O Android com mouse e teclado.</p></div>
+        </div>
+
+        <div class="tile glass reveal span2">
+          <div class="art" aria-hidden="true"><div class="player-art"><div class="player">
+            <span class="cover"></span>
+            <span class="info">
+              <span class="top"><strong style="font-size:15px">Mix da semana</strong><span class="eq"><i></i><i></i><i></i><i></i></span></span>
+              <span class="bar"><i></i></span>
+              <span class="seg"><span class="on">No Mac</span><span>No celular</span></span>
+            </span>
+          </div></div></div>
+          <div class="tcap"><h3>Player</h3><p>Escolha onde o som sai.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Privacidade -->
+    <section id="privacidade">
+      <h2 class="section-title reveal">Tudo local.<br><span>Nada na nuvem.</span></h2>
+      <div class="link-art reveal" aria-hidden="true">
+        <span class="node glass"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/></svg></span>
+        <span class="mid">
+          <svg viewBox="0 0 400 8" preserveAspectRatio="none"><path d="M0 4H400" stroke="#0bc18d" stroke-width="3" stroke-dasharray="4 12" stroke-linecap="round" fill="none"/></svg>
+          <span class="badge"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4"/></svg>Wi‑Fi · criptografado</span>
+        </span>
+        <span class="node glass"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg></span>
+      </div>
+      <div class="pills reveal"><span>Sem conta</span><span>Pareamento por QR</span><span>Certificado fixado</span><span>Cada recurso opcional</span></div>
+    </section>
+
+    <!-- Download -->
+    <section id="baixar">
+      <h2 class="section-title reveal">Um app de cada lado.</h2>
+      <div class="dl-grid">
+        <div class="dl-card glass reveal">
+          <span class="ico"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/></svg></span>
+          <div><h3>Mac</h3><p>macOS 14 ou mais novo</p></div>
+          <a class="btn primary" href="#baixar" data-download="mac">Baixar para Mac</a>
+        </div>
+        <div class="dl-card glass reveal">
+          <span class="ico"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg></span>
+          <div><h3>Android</h3><p>Android 10 ou mais novo</p></div>
+          <a class="btn ghost" href="#baixar" data-download="android">Baixar para Android</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot"><div><span class="l"><img src="assets/logo.png" alt="">masterSync</span><span>Sem conta. Sem nuvem. Sem servidor.</span></div></footer>
+</div>
+
+<script src="js/main.js"></script>
+<script src="js/demo.js"></script>
+</body>
+</html>

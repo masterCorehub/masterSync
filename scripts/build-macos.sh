@@ -58,3 +58,6 @@ archive="$stage/Nexus masterSync macOS.zip"
 ditto -c -k --keepParent "$app" "$archive"
 install -m 644 "$archive" "$dist/Nexus masterSync macOS.zip"
 printf '%s\n' "$dist/Nexus masterSync macOS.zip"
+if [[ "${NEXUS_BUILD_DMG:-1}" == "1" ]]; then
+    bash "$repo/scripts/build-dmg.sh" "$app" "$dist/MasterSync-macOS.dmg"
+fi

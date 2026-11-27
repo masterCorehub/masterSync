@@ -81,6 +81,15 @@ O que está tocando no celular (Spotify, YouTube e outros), com capa, barra de p
 
 <p align="center"><img src="docs/media/tour-claro.gif" width="860" alt="Passeio pelas telas em tema claro"></p>
 
+## Baixar
+
+Cada atualização da branch `main` gera uma versão pronta na página de [Releases](https://github.com/masterCorehub/masterSync/releases/latest):
+
+- **Mac:** `MasterSync-macOS.dmg` (abra e arraste para Aplicativos) ou `MasterSync-macOS.zip`.
+- **Android:** `MasterSync-Android-Completo.apk` (com notificações, SMS e códigos 2FA) ou `MasterSync-Android-Direto.apk` (sem as permissões sensíveis).
+
+O app do Mac usa assinatura local; se o macOS avisar ao abrir, clique com o botão direito e escolha **Abrir**. Sem a chave de assinatura configurada, os APKs saem em modo debug.
+
 ## Como começar
 
 1. **Mac:** abra o `Nexus masterSync.app`, vá em **Dispositivos → Ativar rede local → Gerar QR**.
