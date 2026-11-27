@@ -3,6 +3,24 @@ import Foundation
 import NexusCore
 import UserNotifications
 
+/// Writes an app's icon to a small PNG so a macOS banner can carry it as its picture
+/// (the banner's own corner icon is always MasterSync's; macOS does not let an app change it).
+enum NoticeIconFile {
+    static func url(for image: NSImage, group: String) -> URL? {
+        guard let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return nil }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("NexusNoticeIcons", isDirectory: true)
+        // FNV-1a keeps the name safe whatever characters the phone's package name has.
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in group.utf8 { hash = (hash ^ UInt64(byte)) &* 0x100000001b3 }
+        let file = folder.appendingPathComponent(String(hash, radix: 16)).appendingPathExtension("png")
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try png.write(to: file, options: .atomic)
+            return file
+        } catch { return nil }
+    }
+}
+
 @MainActor
 final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     struct Notice: Identifiable {
@@ -120,6 +138,11 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
         content.body = entry.body
         content.threadIdentifier = entry.group
         content.categoryIdentifier = entry.canReply ? "nexus.reply" : (entry.canDismiss ? "nexus.notice" : "")
+        // The phone app's own icon travels with the banner (a copy is made, so the temp file can be reused).
+        if let icon = entry.icon, let file = NoticeIconFile.url(for: icon, group: entry.group),
+           let attachment = try? UNNotificationAttachment(identifier: "app-icon", url: file) {
+            content.attachments = [attachment]
+        }
         center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
 
@@ -148,7 +171,7 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
                       body: hideContent ? "" : Wire.visible(message.text ?? "", limit: 600),
                       date: message.at.map { Date(timeIntervalSince1970: Double($0) / 1000) } ?? .now,
                       canReply: message.canReply == true && !hideContent, canDismiss: message.canDismiss != false,
-                      icon: message.data.flatMap { GalleryModel.image($0, size: 36) })
+                      icon: message.data.flatMap { GalleryModel.image($0, size: 96) })
     }
 
     private func applySnapshot(_ message: Message, peer: String) {

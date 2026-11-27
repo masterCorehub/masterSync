@@ -245,17 +245,21 @@ class MirrorNotifications : NotificationListenerService(), NotificationRelay {
 
     private fun id(value: String) = Wire.encode(MessageDigest.getInstance("SHA-256").digest(value.toByteArray()))
 
-    private fun icon(sbn: StatusBarNotification): String? = runCatching {
-        val drawable = sbn.notification.smallIcon?.loadDrawable(this) ?: return null
-        val bitmap = Bitmap.createBitmap(36, 36, Bitmap.Config.ARGB_8888)
+    /** The app's own launcher icon (what the user knows it by); the notification's small silhouette is only the fallback. */
+    private fun icon(sbn: StatusBarNotification): String? =
+        runCatching { encode(packageManager.getApplicationIcon(sbn.packageName), 96) }.getOrNull()
+            ?: runCatching { encode(sbn.notification.smallIcon?.loadDrawable(this) ?: return null, 36) }.getOrNull()
+
+    private fun encode(drawable: android.graphics.drawable.Drawable, size: Int): String {
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         try {
-            drawable.setBounds(0, 0, 36, 36)
+            drawable.setBounds(0, 0, size, size)
             drawable.draw(Canvas(bitmap))
             val output = ByteArrayOutputStream()
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
-            Wire.encode(output.toByteArray())
+            return Wire.encode(output.toByteArray())
         } finally { bitmap.recycle() }
-    }.getOrNull()
+    }
 
     private fun activeSession(): MediaController? = runCatching {
         getSystemService(MediaSessionManager::class.java)
