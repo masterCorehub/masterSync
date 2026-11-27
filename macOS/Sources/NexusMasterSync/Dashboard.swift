@@ -88,7 +88,7 @@ struct Dashboard: View {
         .task(id: launcherIconsKey) { model.requestLauncherIcons(for: launcherPins[model.selected?.id ?? ""] ?? []) }
         .foregroundStyle(palette.ink)
         .tint(accent)
-        .toggleStyle(.switch)
+        .toggleStyle(GlassToggleStyle())
         .onChange(of: model.latestInstantPhoto?.id) { _, _ in
             if let photo = model.latestInstantPhoto { preview = photo.url }
         }
@@ -198,14 +198,14 @@ struct Dashboard: View {
                         switch model.section {
                         case .overview: overview(size: viewport.size)
                         case .conversation: EmptyView()
-                        case .devices: devices
-                        case .clipboard: clipboard
+                        case .devices: devices.frame(maxWidth: 760, alignment: .leading)
+                        case .clipboard: clipboard.frame(maxWidth: 760, alignment: .leading)
                         case .documents: documents
                         case .gallery: gallery
                         case .files: files
                         case .notifications: notifications
                         case .remote: remote
-                        case .settings: settings
+                        case .settings: settings.frame(maxWidth: 760, alignment: .leading)
                         case .apps: appsScreen
                         case .calls, .sms, .webcam: EmptyView()
                         }
@@ -1611,16 +1611,18 @@ struct Dashboard: View {
     }
 
     private func card<Content: View>(_ title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
-            Label {
-                Text(title).font(.headline)
-            } icon: {
-                Image(systemName: icon).foregroundStyle(palette.accent)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                IconBadge(systemName: icon, size: 28)
+                Text(title).font(.system(size: 13, weight: .bold))
             }
+            .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
             content()
-        }.padding(17).frame(maxWidth: .infinity, alignment: .leading)
-            .nexusPanel(palette, radius: 16)
+        }
+        .font(.system(size: 13))
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .glassPanel(radius: 20)
     }
 
     private func empty(_ text: String) -> some View {

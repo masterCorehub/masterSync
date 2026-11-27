@@ -196,3 +196,16 @@ struct SnapshotAwareScroll<Content: View>: View {
         }
     }
 }
+
+/// Every `Toggle` in the window: label at the left, the design's switch at the right.
+struct GlassToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 10) {
+            configuration.label
+            Spacer(minLength: 8)
+            GlassToggle(isOn: configuration.$isOn)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { configuration.isOn.toggle() }
+    }
+}
