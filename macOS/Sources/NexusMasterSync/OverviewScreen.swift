@@ -15,8 +15,8 @@ struct OverviewData {
     var active: Bool
     var battery: Int?
     var charging: Bool
-    /// Label and value pairs shown under the battery; only things the app really knows.
-    var status: [(String, String)]
+    /// The six quick buttons under the battery.
+    var controls: [QuickControl]
     var notices: [NotificationSync.Notice]
     var conversation: [OverviewConversationRow]
     var photos: [ReceivedFile]
@@ -30,6 +30,7 @@ struct OverviewActions {
     var sendFile: (() -> Void)?
     var photo: (() -> Void)?
     var find: (() -> Void)?
+    var pressControl: (QuickControl.Kind) -> Void = { _ in }
     var openNotifications: () -> Void = {}
     var openConversation: () -> Void = {}
     var openGallery: () -> Void = {}
@@ -159,22 +160,38 @@ struct OverviewScreen: View {
                     }
                 }.frame(height: 6).padding(.top, -8)
             }
-            VStack(spacing: 0) {
-                Rectangle().fill(palette.line).frame(height: 1)
-                ForEach(Array(data.status.enumerated()), id: \.offset) { _, row in
-                    HStack {
-                        Text(row.0).foregroundStyle(palette.muted)
-                        Spacer()
-                        Text(row.1).fontWeight(.medium)
-                    }
-                    .font(.system(size: 12.5)).padding(.vertical, 10)
-                    Rectangle().fill(palette.line).frame(height: 1)
-                }
+            Rectangle().fill(palette.line).frame(height: 1)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                ForEach(data.controls) { controlButton($0) }
             }
         }
         .padding(18)
         .frame(maxHeight: .infinity, alignment: .top)
         .glassPanel(radius: 20)
+    }
+
+    private func controlButton(_ control: QuickControl) -> some View {
+        Button { actions.pressControl(control.kind) } label: {
+            HStack(spacing: 8) {
+                Image(systemName: control.icon).font(.system(size: 14))
+                    .foregroundStyle(control.isOn ? palette.accentInk : palette.ink)
+                    .frame(width: 30, height: 30)
+                    .background(control.isOn ? palette.fill : palette.panel2, in: Circle())
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(control.title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                    Text(control.subtitle).font(.system(size: 10.5)).foregroundStyle(palette.muted).lineLimit(1).minimumScaleFactor(0.8)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 8)
+            .background(control.isOn ? palette.accentSurface : palette.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(palette.line) }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!control.isEnabled).opacity(control.isEnabled ? 1 : 0.5)
+        .accessibilityLabel(control.accessibilityLabel)
+        .accessibilityAddTraits(control.isOn ? .isSelected : [])
     }
 
     private var quickTiles: some View {

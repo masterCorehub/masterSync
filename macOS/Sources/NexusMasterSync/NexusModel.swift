@@ -1018,6 +1018,8 @@ final class NexusModel: ObservableObject {
             if peer == clipboardImagePeer && canClipboard(peer) && message.sensitive != true {
                 clipboardImages.receive(message)
             }
+        case "deviceControlsState":
+            if permissions[peer]?.deviceControls == true { deviceControlStates[peer] = message }
         case "dndState":
             if permissions[peer]?.noticeSync == true { notifications.handle(message, peer: peer) }
         case "notice", "noticeRemoved", "noticeSnapshot", "noticeDismissFailed":
@@ -1086,6 +1088,64 @@ final class NexusModel: ObservableObject {
     }
 
     var androidDnd: Message? { selected.flatMap { notifications.dnd[$0.id] } }
+
+    // MARK: Quick controls (torch, ringer, lock, hotspot)
+
+    @Published private(set) var deviceControlStates: [String: Message] = [:]
+
+    var deviceControlsAvailable: Bool { selected.map { permissions[$0.id]?.deviceControls == true } ?? false }
+
+    var quickControlInputs: QuickControls.Inputs {
+        let peer = selected?.id ?? ""
+        let state = deviceControlStates[peer]
+        return QuickControls.Inputs(
+            phoneName: selected?.name ?? "", online: active, dndAllowed: androidDnd?.dndAllowed, dndEnabled: androidDnd?.dndEnabled == true,
+            canFind: canFindPhone, controlsAvailable: deviceControlsAvailable, torch: state?.torch, torchAvailable: state?.torchAvailable,
+            ringer: state?.ringer, hasADB: wirelessControlDevice(for: selected?.id) != nil && ADBClipboard.adbExecutable != nil)
+    }
+
+    func refreshDeviceControls() {
+        if deviceControlsAvailable, let peer = selected { server?.send(Message("deviceControlsRequest"), to: peer.id) }
+    }
+
+    private func sendDeviceControl(_ control: String, enabled: Bool) {
+        guard deviceControlsAvailable, let peer = selected else { return }
+        var message = Message("deviceControl")
+        message.control = control
+        message.enabled = enabled
+        server?.send(message, to: peer.id)
+    }
+
+    /// Runs one ADB shell action on the selected phone over Wi-Fi and reports a failure the way other actions do.
+    private func runOnPhone(_ action: @escaping @Sendable (ADBClipboardSession, String) throws -> Void) {
+        guard let device = wirelessControlDevice(for: selected?.id), let adb = ADBClipboard.adbExecutable else {
+            actionFeedback = "Configure o controle por Wi-Fi para usar este botão."
+            return
+        }
+        Task {
+            do {
+                try await Task.detached {
+                    let session = ADBClipboardSession(adb: adb)
+                    let serial = try await session.wirelessSerial(for: device)
+                    try action(session, serial)
+                }.value
+            } catch {
+                actionFeedback = error.localizedDescription
+            }
+        }
+    }
+
+    func pressQuickControl(_ kind: QuickControl.Kind) {
+        let inputs = quickControlInputs
+        switch kind {
+        case .dnd: setAndroidDnd(!inputs.dndEnabled)
+        case .ringer: sendDeviceControl("ringer", enabled: inputs.ringer != "silent")
+        case .find: findPhone()
+        case .torch: sendDeviceControl("torch", enabled: inputs.torch != true)
+        case .lock: runOnPhone { session, serial in try session.lockScreen(serial: serial) }
+        case .hotspot: runOnPhone { session, serial in try session.openHotspotSettings(serial: serial) }
+        }
+    }
 
     func setAndroidDnd(_ enabled: Bool) {
         guard let peer = selected?.id, online.contains(peer), androidDnd?.dndAllowed == true else { return }

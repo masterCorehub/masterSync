@@ -147,6 +147,13 @@ public struct Message: Codable {
     public var screenHeight: Int?
     public var mirror: Bool?
     public var findPhone: Bool?
+    public var deviceControls: Bool?
+    public var control: String?
+    public var enabled: Bool?
+    public var torch: Bool?
+    public var torchAvailable: Bool?
+    public var ringer: String?
+    public var ringerAllowed: Bool?
     public var mediaControl: Bool?
     public var playing: Bool?
     public var rate: Int?

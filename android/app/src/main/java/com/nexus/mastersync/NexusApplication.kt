@@ -181,6 +181,7 @@ class NexusController(val context: Context) {
         return true
     }
     private val actions = DeviceActions(context)
+    private val controls = com.nexus.mastersync.services.DeviceControls(context)
     private var battery = Battery(null, false)
     var supportsNoticeSync = false
         private set
@@ -445,6 +446,19 @@ class NexusController(val context: Context) {
             "ringPhone" -> if (options.value.findPhone) {
                 client.sendTo(peer, Wire.message("actionStatus").put("message", actions.ring()))
             }
+            "deviceControlsRequest" -> if (options.value.findPhone) {
+                client.sendTo(peer, controls.state())
+            }
+            "deviceControl" -> if (options.value.findPhone) {
+                com.nexus.mastersync.services.DeviceControls.parse(message)?.let { command ->
+                    client.sendTo(peer, Wire.message("actionStatus").put("message", controls.apply(command)))
+                    // The ringer and torch settle a moment later; report what they are now.
+                    main.launch {
+                        kotlinx.coroutines.delay(250)
+                        client.sendTo(peer, controls.state())
+                    }
+                }
+            }
             "mediaStatusRequest" -> if (options.value.mediaControl) {
                 listener?.mediaStatus()?.let { client.sendTo(peer, it) }
             }
@@ -510,7 +524,7 @@ class NexusController(val context: Context) {
             .put("notifications", local.notificationMirror && listener != null).put("noticeSync", listener != null)
             .put("instantCamera", local.remoteScan && local.files).put("scanPaste", local.remoteScan && local.files).put("scanner", local.remoteScan && local.files).put("gallery", local.gallery && gallery.available()).put("mirror", local.mirror)
             .put("galleryRevision", 2).put("backgroundConnection", keepConnected.value).put("clipboardImages", local.clipboard)
-            .put("launcher", true).put("adbProof", true).put("chat", true).put("findPhone", local.findPhone).put("mediaControl", local.mediaControl && listener != null))
+            .put("launcher", true).put("adbProof", true).put("chat", true).put("findPhone", local.findPhone).put("deviceControls", local.findPhone).put("mediaControl", local.mediaControl && listener != null))
     }
 
     private fun updateTransfers() {

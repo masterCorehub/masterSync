@@ -88,6 +88,7 @@ struct Dashboard: View {
         .task(id: model.selected?.id) {
             while !Task.isCancelled {
                 model.refreshMedia()
+                model.refreshDeviceControls()
                 do { try await Task.sleep(for: .seconds(3)) } catch { return }
             }
         }
@@ -249,10 +250,7 @@ struct Dashboard: View {
         let latestClip = model.clipboard.items.first
         let data = OverviewData(
             name: phone, active: model.active, battery: model.selectedStatus?.battery, charging: model.selectedStatus?.charging == true,
-            status: [("Conexão", model.active ? "Rede local" : "Desconectado"),
-                     ("Notificações", model.notificationsEnabled ? "Espelhando" : "Desligadas"),
-                     ("Área de transferência", model.clipboardSyncActive ? "Sincronizando" : "Pausada"),
-                     ("Arquivos", model.filesEnabled ? "Aceitando" : "Bloqueados")],
+            controls: QuickControls.items(model.quickControlInputs),
             notices: model.notifications.notices.filter { $0.peer == model.selected?.id }, conversation: Array(rows), photos: Array(mediaFiles.prefix(7)),
             clipboardText: latestClip?.text, clipboardDate: latestClip?.date)
         var actions = OverviewActions()
@@ -260,6 +258,7 @@ struct Dashboard: View {
         actions.sendFile = model.canSendFiles ? { imported = true } : nil
         actions.photo = model.canRequestPhoto && !model.cameraPending ? { model.requestInstantPhoto() } : nil
         actions.find = model.canFindPhone ? { model.findPhone() } : nil
+        actions.pressControl = { model.pressQuickControl($0) }
         actions.openNotifications = { model.section = .notifications }
         actions.openConversation = { model.section = .conversation }
         actions.openGallery = { model.section = .gallery }

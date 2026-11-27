@@ -321,6 +321,20 @@ final class ADBClipboardSession: @unchecked Sendable {
         }
     }
 
+    /// Turns the screen off, which locks the phone.
+    func lockScreen(serial: String) throws {
+        try sendInput(serial: serial, arguments: ["keyevent", "KEYCODE_SLEEP"])
+    }
+
+    /// Opens the phone's own hotspot screen; no app or shell command can switch the hotspot on from outside.
+    func openHotspotSettings(serial: String) throws {
+        let result = try capture(["-s", serial, "shell", "am", "start", "-a", "android.settings.TETHER_SETTINGS"], diagnostics: true)
+        let output = String(decoding: result.0, as: UTF8.self).lowercased()
+        guard result.1 == 0, !output.contains("error"), !output.contains("exception") else {
+            throw NexusError.transfer("O Android não abriu os ajustes do hotspot.")
+        }
+    }
+
     /// The serial of [id] when that phone is on a cable and authorized, so its ADB can be switched back to Wi-Fi.
     func usbSerial(matching id: String?) -> String? {
         guard let id, let output = try? capture(["devices"]) else { return nil }

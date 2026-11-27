@@ -60,8 +60,8 @@ final class ShellRenderTests: XCTestCase {
     func overviewData(connected: Bool) -> OverviewData {
         OverviewData(
             name: "Pixel 9 Pro", active: connected, battery: connected ? 82 : nil, charging: connected,
-            status: [("Conexão", connected ? "Rede local" : "Desconectado"), ("Notificações", "Espelhando"),
-                     ("Área de transferência", "Sincronizando"), ("Arquivos", "Aceitando")],
+            controls: QuickControls.items(QuickControls.Inputs(phoneName: "Pixel 9 Pro", online: connected, dndAllowed: true, dndEnabled: false,
+                canFind: true, controlsAvailable: true, torch: false, torchAvailable: true, ringer: "normal", hasADB: connected)),
             notices: [], conversation: connected ? [
                 OverviewConversationRow(id: "1", title: "Você", preview: "Manda aquela foto do quadro?", date: .now, outgoing: true),
                 OverviewConversationRow(id: "2", title: "Pixel 9 Pro", preview: "Proposta_final.pdf", date: .now, outgoing: false)] : [],
