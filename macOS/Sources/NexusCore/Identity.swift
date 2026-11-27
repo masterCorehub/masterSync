@@ -64,7 +64,7 @@ public struct TLSIdentity {
         ]
         guard let key = SecKeyCreateWithData(material.key as CFData, options as CFDictionary, nil),
               let cert = SecCertificateCreateWithData(nil, material.certificate as CFData),
-              let identity = SecIdentityCreate(nil, cert, key) else { throw NexusError.identity }
+              let identity = SecIdentityBridge.create(cert, key) else { throw NexusError.identity }
         return TLSIdentity(identity: identity, certificate: material.certificate)
     }
 
@@ -93,6 +93,19 @@ public struct TLSIdentity {
         let signature = try privateKey.signature(for: certificateBody).derRepresentation
         return Material(key: privateKey.x963Representation,
                         certificate: DER.sequence(certificateBody, signatureAlgorithm, DER.bits(signature)))
+    }
+}
+
+/// `SecIdentityCreate` lives in Security.framework, but only the newest SDKs declare it. Looking it up by name works with
+/// every SDK (the CI runner's is older than a developer's Mac).
+private enum SecIdentityBridge {
+    private typealias CreateFunction = @convention(c) (CFAllocator?, SecCertificate, SecKey) -> Unmanaged<SecIdentity>?
+
+    static func create(_ certificate: SecCertificate, _ key: SecKey) -> SecIdentity? {
+        // RTLD_DEFAULT is (void *)-2 on Darwin.
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SecIdentityCreate") else { return nil }
+        let function = unsafeBitCast(symbol, to: CreateFunction.self)
+        return function(nil, certificate, key)?.takeRetainedValue()
     }
 }
 
