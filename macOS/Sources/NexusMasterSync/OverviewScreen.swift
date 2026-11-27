@@ -35,6 +35,9 @@ struct OverviewActions {
     var pressControl: (QuickControl.Kind) -> Void = { _ in }
     var chooseOutput: (MediaOutput) -> Void = { _ in }
     var openNotifications: () -> Void = {}
+    /// Removes one notification / all of this phone's notifications.
+    var discardNotice: (NotificationSync.Notice) -> Void = { _ in }
+    var clearNotices: () -> Void = {}
     var openGallery: () -> Void = {}
     /// Asks the phone for a photo's small picture when its tile shows.
     var needsThumbnail: (String) -> Void = { _ in }
@@ -226,6 +229,12 @@ struct OverviewScreen: View {
     private var nowCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             title("Agora no \(data.name)", link: "Ver tudo", action: actions.openNotifications)
+            if !data.notices.isEmpty {
+                Button("Limpar tudo", action: actions.clearNotices)
+                    .buttonStyle(.plain).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(palette.muted)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .accessibilityLabel("Limpar todas as notificações")
+            }
             if data.notices.isEmpty {
                 Text(data.active ? "Nenhuma notificação por enquanto." : "Conecte o celular para ver as notificações.")
                     .font(.system(size: 13)).foregroundStyle(palette.muted).padding(.vertical, 24)
@@ -241,6 +250,17 @@ struct OverviewScreen: View {
     }
 
     private func noticeRow(_ notice: NotificationSync.Notice) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            noticeButton(notice)
+            Button { actions.discardNotice(notice) } label: {
+                Image(systemName: "xmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.muted)
+                    .frame(width: 24, height: 24).background(palette.panel2, in: Circle())
+            }
+            .buttonStyle(.plain).accessibilityLabel("Excluir notificação de \(notice.app)").help("Excluir")
+        }
+    }
+
+    private func noticeButton(_ notice: NotificationSync.Notice) -> some View {
         Button { actions.openNotifications() } label: {
             HStack(alignment: .top, spacing: 12) {
                 Group {

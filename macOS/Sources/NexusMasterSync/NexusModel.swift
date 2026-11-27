@@ -168,7 +168,9 @@ final class NexusModel: ObservableObject {
     }
     private let scanPasteShortcut = ScanPasteShortcut()
     private var scanPasteRequest: (peer: String, id: String, target: ScanPasteShortcut.Target?)?
-    @Published private(set) var cameraFeedback: String?
+    @Published var cameraFeedback: String? {
+        didSet { if cameraFeedback != nil { expire(\.cameraFeedback, task: &cameraToastTask) } }
+    }
     @Published private(set) var latestInstantPhoto: ReceivedFile?
     @Published private(set) var cameraPending = false
     private var cameraRequest: (peer: String, id: String)?
@@ -194,7 +196,31 @@ final class NexusModel: ObservableObject {
     private enum BatteryCondition { case normal, low, charged }
     private var batteryConditions: [String: BatteryCondition] = [:]
 
-    @Published var actionFeedback: String?
+    @Published var actionFeedback: String? {
+        didSet { if actionFeedback != nil { expire(\.actionFeedback, task: &actionToastTask) } }
+    }
+    /// How long a short status message stays on screen before it disappears by itself.
+    var toastSeconds: Double = 4
+    private var actionToastTask: Task<Void, Never>?
+    private var cameraToastTask: Task<Void, Never>?
+
+    /// The short message to show as a toast now (empty messages are not shown).
+    var toast: String? {
+        [cameraFeedback, actionFeedback].compactMap { $0 }.first { !$0.isEmpty }
+    }
+
+    /// Clears a message after `toastSeconds`; a newer message restarts the timer.
+    private func expire(_ key: ReferenceWritableKeyPath<NexusModel, String?>, task: inout Task<Void, Never>?) {
+        task?.cancel()
+        guard self[keyPath: key] != nil else { return }
+        let message = self[keyPath: key]
+        let seconds = toastSeconds
+        task = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled, let self, self[keyPath: key] == message else { return }
+            self[keyPath: key] = nil
+        }
+    }
     @Published private(set) var mediaStatuses: [String: Message] = [:]
     private var mediaReceivedAt: [String: Date] = [:]
     /// Covers by track key, and the keys already asked for, so each cover is requested once.

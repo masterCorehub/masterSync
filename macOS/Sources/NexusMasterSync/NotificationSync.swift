@@ -201,6 +201,11 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
         remove(entry.id)
     }
 
+    /// Removes one notice: dismissed on Android when it allows, otherwise hidden on this Mac only.
+    func discard(_ entry: Notice) {
+        if entry.canDismiss { dismiss(entry) } else { hide(entry) }
+    }
+
     /// Dismisses on Android every notice it allows, and hides the fixed ones on this Mac.
     func clearAll(peer: String) {
         for entry in notices where entry.peer == peer {

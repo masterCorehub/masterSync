@@ -138,6 +138,10 @@ struct MenuBarPanel: View {
                     Button("\(model.sms.unreadTotal) SMS não lidos") { open(.sms) }
                         .buttonStyle(.plain).font(.system(size: 11.5)).foregroundStyle(palette.accent)
                 }
+                if !shown.isEmpty {
+                    Button("Limpar") { if let peer = model.selected?.id { model.notifications.clearAll(peer: peer) } }
+                        .buttonStyle(.plain).font(.system(size: 11.5)).foregroundStyle(palette.muted)
+                }
                 Button("Todas") { open(.notifications) }.buttonStyle(.plain).font(.system(size: 11.5)).foregroundStyle(palette.accent)
             }
             if shown.isEmpty {
@@ -157,7 +161,7 @@ struct MenuBarPanel: View {
                             Spacer(minLength: 0)
                             Text(notice.date, style: .relative).font(.system(size: 10)).foregroundStyle(palette.faint).lineLimit(1)
                             if notice.canDismiss {
-                                Button { model.notifications.dismiss(notice) } label: { Image(systemName: "xmark") }
+                                Button { model.notifications.discard(notice) } label: { Image(systemName: "xmark") }
                                     .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(palette.muted)
                                     .accessibilityLabel("Dispensar")
                             }

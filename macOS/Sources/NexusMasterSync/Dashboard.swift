@@ -101,6 +101,21 @@ struct Dashboard: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             }
         }
+        .overlay(alignment: .bottom) {
+            if let toast = model.toast {
+                Text(toast)
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(palette.ink)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay { Capsule().strokeBorder(palette.line) }
+                    .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+                    .padding(.bottom, 24)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .accessibilityAddTraits(.updatesFrequently)
+                    .onTapGesture { model.actionFeedback = nil; model.cameraFeedback = nil }
+            }
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: model.toast)
         .task { volume = await outputVolume() }
         .task(id: model.selected?.id) {
             while !Task.isCancelled {
@@ -274,6 +289,8 @@ struct Dashboard: View {
         actions.pressControl = { model.pressQuickControl($0) }
         actions.chooseOutput = { chooseAudioOutput($0) }
         actions.openNotifications = { model.section = .notifications }
+        actions.discardNotice = { model.notifications.discard($0) }
+        actions.clearNotices = { if let peer = model.selected?.id { model.notifications.clearAll(peer: peer) } }
         actions.openGallery = { model.section = .gallery }
         actions.needsThumbnail = { id in if model.canBrowseGallery { model.gallery.thumbnail(id) } }
         actions.dropFiles = model.canSendFiles ? { model.sendDroppedFiles($0) } : nil
@@ -286,8 +303,6 @@ struct Dashboard: View {
                 Label(alert, systemImage: "battery.25percent")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(palette.accent)
             }
-            if let feedback = model.cameraFeedback, !feedback.isEmpty { empty(feedback) }
-            if let feedback = model.actionFeedback { empty(feedback) }
         })
         return OverviewScreen(data: data, actions: actions, extras: extras)
     }
@@ -1158,7 +1173,6 @@ struct Dashboard: View {
                 .disabled(!(controlActive || screen.inAppStarting || canStartControl))
                 if screen.connecting { ProgressView("Conectando ao Android…").controlSize(.small) }
                 if let feedback = screen.feedback, !screen.requesting { empty(feedback).font(.system(size: 12)) }
-                if let feedback = model.actionFeedback { empty(feedback).font(.system(size: 12)) }
             }
             .padding(16)
             .glassPanel(radius: 20)

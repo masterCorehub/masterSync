@@ -134,6 +134,21 @@ final class NotificationSyncTests: XCTestCase {
         XCTAssertEqual(Set(sync.notices.map(\.remoteID)), ["clear", "elsewhere"])
     }
 
+    @MainActor func testDiscardDismissesOnAndroidWhenAllowedAndHidesOtherwise() {
+        let sync = visibleSync()
+        var sent: [Message] = []
+        sync.send = { _, message in sent.append(message) }
+        sync.handle(notice("clear", at: 10), peer: "phone")
+        sync.handle(notice("fixed", at: 20, canDismiss: false), peer: "phone")
+        sync.handle(notice("keep", at: 30), peer: "phone")
+
+        sync.discard(sync.notices.first { $0.remoteID == "clear" }!)
+        sync.discard(sync.notices.first { $0.remoteID == "fixed" }!)
+        XCTAssertEqual(sent.map(\.id), ["clear"])
+        // "clear" leaves once the phone confirms; "fixed" is hidden on this Mac right away.
+        XCTAssertEqual(Set(sync.notices.map(\.remoteID)), ["clear", "keep"])
+    }
+
     // MARK: Verification codes
 
     @MainActor private func found(_ sync: NotificationSync) -> () -> [String] {
