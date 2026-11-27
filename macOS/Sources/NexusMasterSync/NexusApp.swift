@@ -64,32 +64,10 @@ struct NexusApp: App {
         .defaultSize(width: 495, height: 770)
 
         MenuBarExtra {
-            VStack(alignment: .leading, spacing: 12) {
-                Label("Nexus masterSync", systemImage: "arrow.left.arrow.right")
-                    .font(.headline)
-                if let phone = model.selected {
-                    Text(phone.name)
-                    Text(model.active ? "Conectado pela rede local" : "Desconectado")
-                        .font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Text("Nenhum celular conectado").foregroundStyle(.secondary)
-                }
-                if model.screen.inAppControl { Button("Encerrar controle") { model.screen.endAll() } }
-                if model.screen.sharing { Button("Parar espelhamento") { model.screen.end() } }
-                if model.screen.usbActive { Button("Encerrar sessão do scrcpy") { model.screen.stopUSB() } }
-                Divider()
-                Button("Abrir visão geral") { model.section = .overview; showWindow() }
-                Button("Enviar arquivo") { model.section = .files; showWindow() }
-                Button("Dispositivos") { model.section = .devices; showWindow() }
-                Divider()
-                Button("Encerrar Nexus masterSync") {
-                    model.screen.stopUSB()
-                    NSApp.terminate(nil)
-                }
-            }
-            .padding(16)
-            .frame(width: 245, alignment: .leading)
-            .background { NexusBackdrop() }
+            MenuBarPanel(model: model, open: { section in model.section = section; showWindow() }, quit: {
+                model.screen.stopUSB()
+                NSApp.terminate(nil)
+            })
             .preferredColorScheme(preferredScheme)
         } label: {
             if let battery = model.selectedStatus?.battery {

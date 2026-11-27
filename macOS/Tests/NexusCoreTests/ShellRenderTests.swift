@@ -124,4 +124,25 @@ final class ShellRenderTests: XCTestCase {
         _ = try render(AppsScreen(data: appsData(loaded: true), actions: AppsScreenActions()), name: "apps-estreita", scheme: .dark,
                        width: 484, height: 1000)
     }
+
+    // MARK: Coming soon and menu bar
+
+    func testComingSoonRendersForEverySoonSection() throws {
+        for section in Section.allCases where section.isComingSoon {
+            for scheme in [ColorScheme.dark, .light] {
+                let image = try render(ComingSoonView(section: section), name: "em-breve-\(section.id.lowercased().replacingOccurrences(of: " ", with: "-"))",
+                                       scheme: scheme, width: 700, height: 420)
+                XCTAssertEqual(image.size.width, 700, accuracy: 1)
+            }
+        }
+    }
+
+    func testMenuBarContentRendersWithoutPhone() throws {
+        let model = NexusModel()
+        for scheme in [ColorScheme.dark, .light] {
+            let image = try render(MenuBarPanel(model: model, open: { _ in }, quit: {}), name: "menu-da-barra", scheme: scheme,
+                                   width: 340, height: 460)
+            XCTAssertEqual(image.size.width, 340, accuracy: 1)
+        }
+    }
 }

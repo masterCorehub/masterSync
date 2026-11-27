@@ -207,7 +207,7 @@ struct Dashboard: View {
                         case .remote: remote
                         case .settings: settings.frame(maxWidth: 760, alignment: .leading)
                         case .apps: appsScreen
-                        case .calls, .sms, .webcam: EmptyView()
+                        case .calls, .sms, .webcam: ComingSoonView(section: model.section)
                         }
                     }
                     .padding(.horizontal, 26)
