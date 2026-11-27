@@ -12,7 +12,8 @@ struct Dashboard: View {
     @Environment(\.calendar) private var calendar
     @Environment(\.colorScheme) private var scheme
     @Environment(\.openWindow) private var openWindow
-    @State private var pendingScanDeletion: ReceivedFile?
+    @State private var scanModal: ReceivedFile?
+    @State private var seenScans: Set<String>?
     @State private var imported = false
     @State private var targetingPhoneDrop = false
     @AppStorage("android-launcher-pins") private var storedLauncherPins = Data()
@@ -63,9 +64,6 @@ struct Dashboard: View {
                         .padding(.horizontal, 26)
                         .padding(.bottom, 26)
                         .onChange(of: model.selected?.id) { _, _ in chatDraft = "" }
-                        .onChange(of: latestScanPage?.id) { _, page in
-                            if page != nil { model.section = .documents }
-                        }
                 } else {
                     dashboardContent
                 }
@@ -78,6 +76,19 @@ struct Dashboard: View {
             .padding(.bottom, miniPlayerReserve)
         }
         .background { NexusBackdrop() }
+        .onAppear { if seenScans == nil { seenScans = Set(scanPageIDs) } }
+        .onChange(of: scanPageIDs) { _, ids in
+            let known = seenScans ?? []
+            seenScans = known.union(ids)
+            if let id = ScanActions.newPage(known: known, current: ids), let page = model.files.received.first(where: { $0.id == id }) {
+                scanModal = page
+            }
+        }
+        .sheet(item: $scanModal) { page in
+            ScanModal(file: page, canSend: model.canSendFiles,
+                      onSend: { model.sendScanToConversation(page) },
+                      onDelete: { model.files.trashReceived(page.id) })
+        }
         .overlay {
             GeometryReader { area in
                 miniPlayerOverlay(maxHeight: max(160, area.size.height - 40))
@@ -181,21 +192,13 @@ struct Dashboard: View {
             ScrollViewReader { scroll in
                 SnapshotAwareScroll {
                     VStack(alignment: .leading, spacing: 20) {
-                        if model.section == .documents || model.section == .files {
+                        if model.section == .files {
                             HStack {
                                 Spacer()
-                                if model.section == .documents {
-                                    Button { model.requestScan() } label: {
-                                        Label("Digitalizar novo", systemImage: "document.viewfinder")
-                                    }
-                                    .buttonStyle(NexusPillStyle(compact: true)).disabled(!model.canRequestScan)
+                                Button { imported = true } label: {
+                                    Label("Enviar novo", systemImage: "arrow.up")
                                 }
-                                if model.section == .files {
-                                    Button { imported = true } label: {
-                                        Label("Enviar novo", systemImage: "arrow.up")
-                                    }
-                                    .buttonStyle(NexusPillStyle(compact: true)).disabled(!model.canSendFiles)
-                                }
+                                .buttonStyle(NexusPillStyle(compact: true)).disabled(!model.canSendFiles)
                             }
                         }
 
@@ -212,7 +215,6 @@ struct Dashboard: View {
                         case .conversation: EmptyView()
                         case .devices: devices.frame(maxWidth: 760, alignment: .leading)
                         case .clipboard: clipboard.frame(maxWidth: 760, alignment: .leading)
-                        case .documents: documents
                         case .gallery: gallery
                         case .files: files
                         case .notifications: notifications
@@ -229,11 +231,6 @@ struct Dashboard: View {
                     .frame(maxWidth: .infinity)
                 }
                 .id(model.section)
-                .onChange(of: latestScanPage?.id) { _, page in
-                    guard page != nil else { return }
-                    if model.section == .documents { scroll.scrollTo("scan-preview", anchor: .top) }
-                    else { model.section = .documents }
-                }
             }
         }
     }
@@ -261,7 +258,10 @@ struct Dashboard: View {
         actions.control = { model.section = .remote }
         actions.sendFile = model.canSendFiles ? { imported = true } : nil
         actions.photo = model.canRequestPhoto && !model.cameraPending ? { model.requestInstantPhoto() } : nil
-        actions.find = model.canFindPhone ? { model.findPhone() } : nil
+        actions.scan = model.canRequestScan ? { model.requestScan() } : nil
+        actions.scanHint = model.active ? "Ative Arquivos e Digitalizar no celular" : "Conecte o celular"
+        actions.sendFileHint = model.active ? "Ative Arquivos nos dois lados" : "Conecte o celular"
+        actions.photoHint = model.active ? "Ative a câmera remota no celular" : "Conecte o celular"
         actions.pressControl = { model.pressQuickControl($0) }
         actions.openNotifications = { model.section = .notifications }
         actions.openConversation = { model.section = .conversation }
@@ -279,10 +279,6 @@ struct Dashboard: View {
             }
             if let feedback = model.cameraFeedback, !feedback.isEmpty { empty(feedback) }
             if let feedback = model.actionFeedback { empty(feedback) }
-            HStack(spacing: 12) {
-                androidDndToggle
-                Spacer()
-            }
         })
         return OverviewScreen(data: data, actions: actions, extras: extras)
     }
@@ -953,32 +949,6 @@ struct Dashboard: View {
         }
     }
 
-    private var documents: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if let page = latestScanPage {
-                card("Última página salva", icon: "photo") {
-                    FilePreview(url: page.url)
-                        .frame(height: 280)
-                        .accessibilityLabel("Prévia de \(page.offer.name)")
-                    fileRow(page)
-                }
-                .id("scan-preview")
-            }
-            if let feedback = model.scanRequestFeedback { empty(feedback) }
-            if let feedback = model.files.feedback { empty(feedback) }
-            receivedGallery(documentFiles, empty: "Nenhum documento.", scanActions: true)
-        }
-        .confirmationDialog("Mover digitalização para o Lixo?", isPresented: Binding(
-            get: { pendingScanDeletion != nil },
-            set: { if !$0 { pendingScanDeletion = nil } }
-        ), presenting: pendingScanDeletion) { item in
-            Button("Mover para o Lixo", role: .destructive) { model.files.trashReceived(item.id) }
-            Button("Cancelar", role: .cancel) {}
-        } message: { item in
-            Text(item.offer.name)
-        }
-    }
-
     private var gallery: some View {
         VStack(alignment: .leading, spacing: 16) {
             if model.canBrowseGallery {
@@ -1627,9 +1597,7 @@ struct Dashboard: View {
     private var mediaFiles: [ReceivedFile] { model.files.received.filter {
         ($0.offer.mime.hasPrefix("image/") || $0.offer.mime.hasPrefix("video/")) && !isScan($0)
     } }
-    private var documentFiles: [ReceivedFile] { model.files.received.filter {
-        $0.offer.mime == "application/pdf" || isScan($0)
-    } }
+    private var scanPageIDs: [String] { model.files.received.filter { $0.offer.isScanPage }.map(\.id) }
     private var latestScanPage: ReceivedFile? { model.files.received.first { $0.offer.isScanPage } }
 
     private func isScan(_ file: ReceivedFile) -> Bool {
@@ -1656,7 +1624,7 @@ struct Dashboard: View {
     }
 
     @ViewBuilder
-    private func receivedGallery(_ files: [ReceivedFile], empty hint: String, scanActions: Bool = false) -> some View {
+    private func receivedGallery(_ files: [ReceivedFile], empty hint: String) -> some View {
         if files.isEmpty {
             empty(hint)
         } else {
@@ -1680,39 +1648,12 @@ struct Dashboard: View {
                                 NSWorkspace.shared.activateFileViewerSelecting([item.url])
                             }
                             ShareLink(item: item.url)
-                            if scanActions { scanFileActions(item) }
                         }
                         .onDrag { NSItemProvider(contentsOf: item.url) ?? NSItemProvider() }
                     }
                 }
             }
         }
-    }
-
-    @ViewBuilder
-    private func scanFileActions(_ item: ReceivedFile) -> some View {
-        Button("Copiar") {
-            let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
-            pasteboard.writeObjects([item.url as NSURL])
-        }
-        Button("Excluir…", role: .destructive) { pendingScanDeletion = item }
-    }
-
-    private func fileRow(_ item: ReceivedFile) -> some View {
-        HStack(spacing: 8) {
-            Label(item.offer.name, systemImage: item.offer.mime.hasPrefix("image/") ? "photo" : "doc")
-                .lineLimit(1)
-            Spacer()
-            Button("Visualizar") { preview = item.url }
-            scanFileActions(item)
-            if model.section != .overview {
-                Button { NSWorkspace.shared.activateFileViewerSelecting([item.url]) } label: {
-                    Image(systemName: "folder").accessibilityLabel("Mostrar no Finder")
-                }
-                ShareLink(item: item.url) { Image(systemName: "square.and.arrow.up").accessibilityLabel("Compartilhar arquivo") }
-            }
-        }.onDrag { NSItemProvider(contentsOf: item.url) ?? NSItemProvider() }
     }
 
 }

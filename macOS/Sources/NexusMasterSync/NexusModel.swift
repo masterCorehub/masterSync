@@ -7,7 +7,6 @@ enum Section: String, CaseIterable, Identifiable {
     case overview = "Celular"
     case conversation = "Conversa"
     case clipboard = "Área de transferência"
-    case documents = "Documentos"
     case gallery = "Galeria"
     case files = "Arquivos"
     case notifications = "Notificações"
@@ -37,7 +36,6 @@ enum Section: String, CaseIterable, Identifiable {
         case .overview: "Tudo do seu celular, num só lugar"
         case .conversation: "Conversa e arquivos com o celular"
         case .clipboard: "O que você copia, nos dois aparelhos"
-        case .documents: "Digitalizações do celular"
         case .gallery: "Fotos e vídeos do celular"
         case .files: "Enviados e recebidos"
         case .notifications: "Espelhadas em tempo real"
@@ -60,7 +58,6 @@ enum Section: String, CaseIterable, Identifiable {
         case .overview: "iphone"
         case .conversation: "bubble.left.and.bubble.right"
         case .clipboard: "document.on.clipboard"
-        case .documents: "doc.viewfinder"
         case .gallery: "photo.on.rectangle.angled"
         case .files: "folder"
         case .notifications: "bell"
@@ -894,6 +891,16 @@ final class NexusModel: ObservableObject {
         }
     }
 
+    /// Sends a scanned page to the phone as a conversation message and shows the conversation.
+    func sendScanToConversation(_ file: ReceivedFile) {
+        guard canSendFiles, let peer = selected?.id else {
+            actionFeedback = "Ative Arquivos nos dois dispositivos para enviar na conversa."
+            return
+        }
+        files.offer(file.url, to: peer)
+        section = .conversation
+    }
+
     func requestScan() {
         guard let peer = selected, canRequestScan else { return }
         var message = Message("scanRequest")
@@ -1175,6 +1182,10 @@ final class NexusModel: ObservableObject {
 
     func pressQuickControl(_ kind: QuickControl.Kind) {
         let inputs = quickControlInputs
+        if let control = QuickControls.items(inputs).first(where: { $0.kind == kind }), !control.isEnabled {
+            actionFeedback = control.disabledReason
+            return
+        }
         switch kind {
         case .dnd: setAndroidDnd(!inputs.dndEnabled)
         case .ringer: sendDeviceControl("ringer", enabled: inputs.ringer != "silent")

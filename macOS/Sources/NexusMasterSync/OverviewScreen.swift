@@ -29,7 +29,11 @@ struct OverviewActions {
     var control: (() -> Void)?
     var sendFile: (() -> Void)?
     var photo: (() -> Void)?
-    var find: (() -> Void)?
+    var scan: (() -> Void)?
+    /// Why a tile is off, shown in place of its caption so a dimmed tile never looks broken.
+    var sendFileHint = ""
+    var photoHint = ""
+    var scanHint = ""
     var pressControl: (QuickControl.Kind) -> Void = { _ in }
     var openNotifications: () -> Void = {}
     var openConversation: () -> Void = {}
@@ -189,7 +193,8 @@ struct OverviewScreen: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!control.isEnabled).opacity(control.isEnabled ? 1 : 0.5)
+        // Never `.disabled`: pressing a button that is off tells the person why instead of doing nothing.
+        .opacity(control.isEnabled ? 1 : 0.5)
         .accessibilityLabel(control.accessibilityLabel)
         .accessibilityAddTraits(control.isOn ? .isSelected : [])
     }
@@ -197,9 +202,9 @@ struct OverviewScreen: View {
     private var quickTiles: some View {
         let items: [(String, String, String, (() -> Void)?)] = [
             ("cursorarrow.rays", "Controlar", "Controle total", actions.control),
-            ("arrow.up.doc", "Enviar arquivo", "Arraste e solte", actions.sendFile),
-            ("camera", "Foto com o celular", "Usa a câmera dele", actions.photo),
-            ("bell.badge", "Tocar celular", "Para achá-lo", actions.find),
+            ("arrow.up.doc", "Enviar arquivo", actions.sendFile == nil && !actions.sendFileHint.isEmpty ? actions.sendFileHint : "Arraste e solte", actions.sendFile),
+            ("camera", "Foto com o celular", actions.photo == nil && !actions.photoHint.isEmpty ? actions.photoHint : "Usa a câmera dele", actions.photo),
+            ("document.viewfinder", "Digitalizar", actions.scan == nil && !actions.scanHint.isEmpty ? actions.scanHint : "Escaneia com o celular", actions.scan),
         ]
         return HStack(spacing: 12) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in

@@ -4,7 +4,7 @@ import XCTest
 final class SidebarItemsTests: XCTestCase {
     func testMainGroupOrder() {
         XCTAssertEqual(sidebarItems(group: .main, badges: [:]).map(\.section),
-                       [.overview, .conversation, .notifications, .gallery, .documents, .files, .remote, .apps])
+                       [.overview, .conversation, .notifications, .gallery, .files, .remote, .apps])
     }
 
     func testComingSoonSectionsAreOnlyInSoonGroup() {
@@ -13,6 +13,10 @@ final class SidebarItemsTests: XCTestCase {
         XCTAssertEqual(sidebarItems(group: .footer, badges: [:]).map(\.section), [.devices, .settings])
         let listed = [SidebarGroup.main, .soon, .footer].flatMap { sidebarItems(group: $0, badges: [:]) }.map(\.section)
         XCTAssertFalse(listed.contains { $0.isComingSoon && sidebarItems(group: .main, badges: [:]).map(\.section).contains($0) })
+    }
+
+    func testThereIsNoDocumentsSection() {
+        XCTAssertFalse(Section.allCases.contains { $0.rawValue == "Documentos" })
     }
 
     func testClipboardIsNotListed() {

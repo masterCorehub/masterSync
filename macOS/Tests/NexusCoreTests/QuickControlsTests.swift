@@ -127,4 +127,45 @@ final class QuickControlsTests: XCTestCase {
         XCTAssertEqual(state.ringerAllowed, false)
         XCTAssertEqual(state.torchAvailable, true)
     }
+
+    // MARK: Why a button is off
+
+    func testEnabledButtonsNeedNoExplanation() {
+        for control in QuickControls.items(inputs()) where control.isEnabled {
+            XCTAssertNil(control.disabledReason, "\(control.kind)")
+        }
+    }
+
+    func testEveryDisabledButtonSaysWhy() {
+        var state = inputs(online: false)
+        state.hasADB = false
+        state.canFind = false
+        state.controlsAvailable = false
+        let off = QuickControls.items(state)
+        XCTAssertFalse(off.isEmpty)
+        for control in off where !control.isEnabled {
+            XCTAssertFalse((control.disabledReason ?? "").isEmpty, "\(control.kind) sem motivo")
+        }
+    }
+
+    func testFindPhoneExplainsTheMissingSetting() {
+        var state = inputs()
+        state.canFind = false
+        XCTAssertEqual(item(.find, state).disabledReason,
+                       "Ative “Localizar celular” no MasterSync do Android para fazê-lo tocar.")
+        XCTAssertEqual(item(.find, inputs(online: false)).disabledReason, "Conecte o celular para usar este botão.")
+    }
+
+    func testAdbButtonsExplainTheMissingSetup() {
+        var state = inputs()
+        state.hasADB = false
+        XCTAssertEqual(item(.lock, state).disabledReason, "Configure o controle por Wi‑Fi (tela Dispositivos) para usar este botão.")
+        XCTAssertEqual(item(.hotspot, state).disabledReason, item(.lock, state).disabledReason)
+    }
+
+    func testAppUpdateReason() {
+        var state = inputs()
+        state.controlsAvailable = false
+        XCTAssertEqual(item(.torch, state).disabledReason, "Atualize o MasterSync no Android para usar a lanterna e o modo silencioso.")
+    }
 }

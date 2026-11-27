@@ -13,7 +13,7 @@ struct SidebarItem: Identifiable, Equatable {
 /// What the side bar lists in each group. `badges` carries pending counts; zero shows nothing.
 func sidebarItems(group: SidebarGroup, badges: [Section: Int]) -> [SidebarItem] {
     let sections: [Section] = switch group {
-    case .main: [.overview, .conversation, .notifications, .gallery, .documents, .files, .remote, .apps]
+    case .main: [.overview, .conversation, .notifications, .gallery, .files, .remote, .apps]
     case .soon: [.calls, .sms, .webcam]
     case .footer: [.devices, .settings]
     }
