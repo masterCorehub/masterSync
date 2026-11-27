@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Gera as imagens e GIFs do README a partir das telas renderizadas pelos testes (dados de exemplo, nada de aparelho real).
 #
-#   NEXUS_RENDER_SCALE=2 swift test --package-path macOS --filter "ShellRenderTests|MiniPlayerRenderTests"
+#   NEXUS_RENDER_SCALE=2 swift test --package-path macOS --filter "ShellRenderTests|MiniPlayerRenderTests|OnboardingFlowTests"
 #   scripts/make-readme-media.sh [pasta-das-capturas]
 #
 # Precisa do ffmpeg. Os arquivos saem em docs/media/.
@@ -63,6 +63,11 @@ for pair in "visao-geral:visao-geral-conectado" "sms:sms" "fotos:fotos" "arquivo
   for t in escuro claro; do
     ffmpeg -v error -y -i "$shots/$src-$t.png" -vf "crop=iw:min(ih\,iw*0.75):0:0,scale=1100:-1" "$out/$name-$t.png"
   done
+done
+# Primeiro uso (boas-vindas e escolha de recursos).
+for t in escuro claro; do
+  ffmpeg -v error -y -i "$shots/onboarding-welcome-$t.png" -vf "scale=420:-1" "$out/onboarding-boas-vindas-$t.png"
+  ffmpeg -v error -y -i "$shots/onboarding-features-$t.png" -vf "scale=420:-1" "$out/onboarding-recursos-$t.png"
 done
 echo "Pronto: $out"
 ls -la "$out" | awk '{print $5, $9}'
