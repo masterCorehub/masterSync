@@ -153,7 +153,7 @@ struct Dashboard: View {
     private var dashboardContent: some View {
         GeometryReader { viewport in
             ScrollViewReader { scroll in
-                ScrollView {
+                SnapshotAwareScroll {
                     VStack(alignment: .leading, spacing: 20) {
                         if model.section == .documents || model.section == .files {
                             HStack {
@@ -485,57 +485,32 @@ struct Dashboard: View {
         }
     }
 
-    private func phonePanel(height: CGFloat) -> some View {
-        VStack(spacing: 10) {
-            embeddedPhone(height: height)
-                .dropDestination(for: URL.self) { urls, _ in
-                    targetingPhoneDrop = false
-                    return model.sendDroppedFiles(urls)
-                } isTargeted: { targetingPhoneDrop = $0 && model.canSendFiles }
-                .overlay {
-                    if targetingPhoneDrop {
-                        RoundedRectangle(cornerRadius: 27)
-                            .strokeBorder(palette.accent, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
-                            .background(palette.accentSurface.opacity(0.9), in: RoundedRectangle(cornerRadius: 27))
-                            .overlay {
-                                Label("Solte para enviar", systemImage: "arrow.up.circle")
-                                    .font(.headline).foregroundStyle(palette.accent)
-                            }
-                            .allowsHitTesting(false)
-                    }
-                }
-            Button { model.findPhone() } label: {
-                Label("Tocar celular", systemImage: "bell.badge")
-            }
-            .buttonStyle(NexusPillStyle(compact: true)).disabled(!model.canFindPhone)
-            if let feedback = model.actionFeedback { empty(feedback) }
-        }
-    }
-
-    private func embeddedPhone(height: CGFloat = 454) -> some View {
+    /// The phone in its frame: live control in the app, the screen-sharing picture, or the start prompt.
+    private func embeddedPhone(height: CGFloat = 600) -> some View {
         let screen = model.screen
-        let controlActive = (screen.controlling && screen.sharing) || screen.inAppControl
-        return VStack(spacing: 6) {
+        let width = height * 292 / 600
+        let outer = height * 44 / 600
+        return ZStack {
+            RoundedRectangle(cornerRadius: outer, style: .continuous).fill(Color(red: 0.04, green: 0.043, blue: 0.055))
             ZStack {
-                RoundedRectangle(cornerRadius: 28).fill(Color.black.opacity(0.91))
+                Color.black
                 if screen.inAppControl {
                     PhoneDisplay(model: screen.display)
-                        .clipShape(RoundedRectangle(cornerRadius: 22))
                         .accessibilityLabel("Tela interativa do Android")
                 } else if let frame = screen.frame {
                     GeometryReader { canvas in
                         let ratio = frame.size.width / max(frame.size.height, 1)
-                        let width = min(canvas.size.width, canvas.size.height * ratio)
-                        let height = width / max(ratio, 0.01)
+                        let fitWidth = min(canvas.size.width, canvas.size.height * ratio)
+                        let fitHeight = fitWidth / max(ratio, 0.01)
                         Image(nsImage: frame).resizable().scaledToFit()
-                            .frame(width: width, height: height)
+                            .frame(width: fitWidth, height: fitHeight)
                             .contentShape(Rectangle())
                             .gesture(DragGesture(minimumDistance: 0).onEnded { gesture in
                                 // The fit rectangle excludes the black bars from touch input.
-                                guard width > 0, height > 0 else { return }
-                                screen.gesture(from: CGPoint(x: gesture.startLocation.x / width,
-                                                             y: gesture.startLocation.y / height),
-                                               to: CGPoint(x: gesture.location.x / width, y: gesture.location.y / height))
+                                guard fitWidth > 0, fitHeight > 0 else { return }
+                                screen.gesture(from: CGPoint(x: gesture.startLocation.x / fitWidth,
+                                                             y: gesture.startLocation.y / fitHeight),
+                                               to: CGPoint(x: gesture.location.x / fitWidth, y: gesture.location.y / fitHeight))
                             })
                             .position(x: canvas.size.width / 2, y: canvas.size.height / 2)
                             .accessibilityLabel("Tela interativa do Android")
@@ -545,61 +520,71 @@ struct Dashboard: View {
                     }
                 } else {
                     VStack(spacing: 14) {
-                        Image(systemName: "iphone").font(.system(size: 41, weight: .ultraLight))
-                            .foregroundStyle(.white.opacity(0.55)).accessibilityHidden(true)
+                        Image(systemName: "cast").font(.system(size: 36)).foregroundStyle(.white.opacity(0.8))
+                            .accessibilityHidden(true)
                         if screen.preparingControl || screen.requesting || screen.sharing || screen.inAppStarting {
                             ProgressView().controlSize(.small)
                             Text(screen.requesting ? "Autorize no Android" : "Conectando…")
-                                .font(.caption).foregroundStyle(.white)
+                                .font(.system(size: 13)).foregroundStyle(.white)
                         } else {
+                            Text("Tela do \(model.selected?.name ?? "celular") pronta")
+                                .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                             embeddedControlButton
-                            if !model.canMirror && !(model.screen.inAppAvailable && model.wirelessControlDevice(for: model.selected?.id) != nil) {
+                            if !canStartControl {
                                 Text(model.active ? "Autorize o espelhamento no Android." : "Conecte seu Android para começar.")
-                                    .font(.caption).foregroundStyle(.white.opacity(0.75))
+                                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.75))
                                     .multilineTextAlignment(.center)
                             }
                         }
                     }
-                    .padding(12)
+                    .padding(20)
                 }
             }
-            .padding(5)
-            .frame(width: height * 0.507, height: height)
-            .clipShape(.rect(cornerRadius: 27))
-            .overlay { RoundedRectangle(cornerRadius: 27).strokeBorder(palette.border, lineWidth: 2).allowsHitTesting(false) }
-            HStack(spacing: 10) {
-                Button { screen.pressSystemKey(home: false) } label: { Image(systemName: "chevron.left") }
-                    .accessibilityLabel("Voltar no Android").disabled(!controlActive)
-                Button { screen.pressSystemKey(home: true) } label: { Image(systemName: "circle") }
-                    .accessibilityLabel("Tela inicial do Android").disabled(!controlActive)
-                Button { screen.endAll() } label: { Image(systemName: "stop.fill") }
-                    .accessibilityLabel("Encerrar controle").help("Encerrar controle")
-                    .disabled(!(controlActive || screen.inAppStarting))
+            .clipShape(RoundedRectangle(cornerRadius: outer - 9, style: .continuous))
+            .padding(10)
+        }
+        .frame(width: width, height: height)
+        .overlay { RoundedRectangle(cornerRadius: outer, style: .continuous).strokeBorder(.white.opacity(0.12)).allowsHitTesting(false) }
+        .shadow(color: .black.opacity(0.4), radius: 28, y: 18)
+        .dropDestination(for: URL.self) { urls, _ in
+            targetingPhoneDrop = false
+            return model.sendDroppedFiles(urls)
+        } isTargeted: { targetingPhoneDrop = $0 && model.canSendFiles }
+        .overlay {
+            if targetingPhoneDrop {
+                RoundedRectangle(cornerRadius: outer, style: .continuous)
+                    .strokeBorder(palette.accent, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
+                    .background(palette.accentSurface.opacity(0.9), in: RoundedRectangle(cornerRadius: outer, style: .continuous))
+                    .overlay {
+                        Label("Solte para enviar", systemImage: "arrow.up.circle")
+                            .font(.headline).foregroundStyle(palette.accent)
+                    }
+                    .allowsHitTesting(false)
             }
-            .buttonStyle(NexusPillStyle(compact: true))
-            .disabled(!controlActive && !screen.inAppStarting)
-            .opacity(controlActive || screen.inAppStarting ? 1 : 0)
         }
     }
 
-    private var embeddedControlButton: some View {
-        Button {
-            if let peer = model.selected?.id {
-                if let device = model.wirelessControlDevice(for: peer) {
-                    switch ScreenMirror.controlRoute(hasWirelessADB: true, scrcpyInstalled: model.screen.scrcpyInstalled,
-                                                     inAppAvailable: model.screen.inAppAvailable) {
-                    case .inApp: model.screen.beginInAppControl(wireless: device)
-                    case .scrcpy: model.screen.launchScrcpy(audioOnly: false, wireless: device)
-                    case .mirror: model.screen.beginControl(peer, wireless: device)
-                    }
-                } else { openWirelessControlGuide() }
+    private var canStartControl: Bool {
+        model.canMirror || (model.screen.inAppAvailable && model.wirelessControlDevice(for: model.selected?.id) != nil)
+    }
+
+    private func startControl() {
+        guard let peer = model.selected?.id else { return }
+        if let device = model.wirelessControlDevice(for: peer) {
+            switch ScreenMirror.controlRoute(hasWirelessADB: true, scrcpyInstalled: model.screen.scrcpyInstalled,
+                                             inAppAvailable: model.screen.inAppAvailable) {
+            case .inApp: model.screen.beginInAppControl(wireless: device)
+            case .scrcpy: model.screen.launchScrcpy(audioOnly: false, wireless: device)
+            case .mirror: model.screen.beginControl(peer, wireless: device)
             }
-        } label: {
-            Label("Controlar", systemImage: "play.fill")
-        }
-        .buttonStyle(NexusPillStyle(prominent: true, compact: true))
-        // Control over ADB needs no screen-sharing permission on the phone.
-        .disabled(!(model.canMirror || (model.screen.inAppAvailable && model.wirelessControlDevice(for: model.selected?.id) != nil)))
+        } else { openWirelessControlGuide() }
+    }
+
+    private var embeddedControlButton: some View {
+        Button { startControl() } label: { Text("Controlar").font(.system(size: 13, weight: .bold)) }
+            .buttonStyle(NexusPillStyle(prominent: true))
+            // Control over ADB needs no screen-sharing permission on the phone.
+            .disabled(!canStartControl)
     }
 
     private enum ConversationEntry: Identifiable {
@@ -1233,116 +1218,139 @@ struct Dashboard: View {
     }
 
     private var remote: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 28) {
-                remotePhonePreview
-                VStack(alignment: .leading, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(model.selected?.name ?? "Android")
-                            .font(.title2.weight(.semibold))
-                        Label(model.active ? "Conectado pela rede local" : "Aguardando conexão",
-                              systemImage: model.active ? "wifi" : "wifi.slash")
-                            .font(.subheadline)
-                            .foregroundStyle(model.active ? palette.connected : palette.muted)
-                    }
-
-                    HStack(spacing: 8) {
-                        remoteAction(audioOnly: false)
-                        remoteAction(audioOnly: true)
-                    }
-
-                    HStack(spacing: 10) {
-                        if model.screen.requesting {
-                            ProgressView().controlSize(.small)
-                            Text("Autorize a prévia no Android.").foregroundStyle(palette.muted)
-                        } else if model.screen.sharing {
-                            Button("Parar prévia") { model.screen.end() }
-                                .buttonStyle(NexusPillStyle(compact: true))
-                            Button("Ampliar") { openWindow(id: "mirror") }
-                                .buttonStyle(NexusPillStyle(compact: true))
-                        } else {
-                            Button("Mostrar prévia") { model.requestMirror() }
-                                .buttonStyle(NexusPillStyle(compact: true))
-                                .disabled(!model.canMirror)
-                                .help("Autorize o espelhamento no Android para mostrar a prévia.")
-                        }
-                        Menu {
-                            Button("Configurar Wi-Fi") { wirelessClipboardSetup = true }
-                            Button("Controlar por USB") { model.screen.launchScrcpy(audioOnly: false) }
-                                .disabled(model.screen.usbActive || model.screen.connecting)
-                            Button("Ouvir por USB") { model.screen.launchScrcpy(audioOnly: true) }
-                                .disabled(model.screen.usbActive || model.screen.connecting)
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                        }
-                        .fixedSize()
-                        .accessibilityLabel("Opções de conexão")
-                    }
-                    if model.screen.connecting {
-                        ProgressView("Conectando ao Android…").controlSize(.small)
-                    }
-                    if let feedback = model.screen.feedback, !model.screen.requesting { empty(feedback) }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(24)
-            .nexusPanel(palette, radius: 22)
-            card("Ações no Android", icon: "iphone.radiowaves.left.and.right") {
-                HStack {
-                    Button("Tocar telefone") { model.findPhone() }.disabled(!model.canFindPhone)
-                    Spacer()
-                }
-                if let feedback = model.actionFeedback { empty(feedback) }
-            }
-        }
-    }
-
-    private var remotePhonePreview: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 23).fill(palette.canvas)
-            if let frame = model.screen.frame {
-                // Fit the live frame without cropping system controls.
-                Image(nsImage: frame).resizable().scaledToFit()
-                    .padding(7)
-                    .accessibilityLabel("Prévia da tela do Android")
-            } else {
-                VStack(spacing: 10) {
-                    Image(systemName: "iphone").font(.system(size: 38, weight: .light))
-                        .foregroundStyle(palette.accent)
-                        .accessibilityHidden(true)
-                    Text(model.screen.sharing ? "Carregando prévia…" : "Prévia da tela")
-                        .font(.caption).foregroundStyle(palette.muted)
-                }
-            }
-        }
-        .frame(width: 158, height: 288)
-        .clipShape(.rect(cornerRadius: 23))
-        .overlay {
-            RoundedRectangle(cornerRadius: 23).strokeBorder(palette.border, lineWidth: 2)
-        }
-    }
-
-    private func remoteAction(audioOnly: Bool) -> some View {
         let screen = model.screen
-        let running = screen.usbActive && screen.audioOnlyActive == audioOnly
-        let title = audioOnly ? (running ? "Parar áudio" : "Ouvir no Mac")
-                              : (running ? "Encerrar controle" : "Controlar Android")
-        let symbol = audioOnly ? (running ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                               : (running ? "stop.fill" : "play.fill")
-        return Button {
-            if running {
-                screen.stopUSB()
-            } else {
-                if let device = model.wirelessControlDevice(for: model.selected?.id) {
-                    screen.launchScrcpy(audioOnly: audioOnly, wireless: device)
-                } else { openWirelessControlGuide() }
+        let controlActive = (screen.controlling && screen.sharing) || screen.inAppControl
+        let live = controlActive || screen.usbActive
+        let route = ScreenMirror.controlRoute(hasWirelessADB: model.wirelessControlDevice(for: model.selected?.id) != nil,
+                                              scrcpyInstalled: screen.scrcpyInstalled, inAppAvailable: screen.inAppAvailable)
+        let tools: [(String, String, Bool, () -> Void)] = [
+            ("house", "Início", controlActive, { screen.pressSystemKey(home: true) }),
+            ("chevron.left", "Voltar", controlActive, { screen.pressSystemKey(home: false) }),
+            ("bell.badge", "Tocar celular", model.canFindPhone, { model.findPhone() }),
+            ("arrow.up.doc", "Enviar arquivo", model.canSendFiles, { imported = true }),
+            ("macwindow", "Janela separada", !(screen.connecting || (screen.usbActive && screen.audioOnlyActive)), {
+                if screen.usbActive && !screen.audioOnlyActive { screen.stopUSB() }
+                else if let device = model.wirelessControlDevice(for: model.selected?.id) { screen.launchScrcpy(audioOnly: false, wireless: device) }
+                else { openWirelessControlGuide() }
+            }),
+            ("speaker.wave.2", "Ouvir no Mac", !(screen.connecting || (screen.usbActive && !screen.audioOnlyActive)), {
+                if screen.usbActive && screen.audioOnlyActive { screen.stopUSB() }
+                else if let device = model.wirelessControlDevice(for: model.selected?.id) { screen.launchScrcpy(audioOnly: true, wireless: device) }
+                else { openWirelessControlGuide() }
+            }),
+        ]
+        return ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 16) {
+                remotePhoneStage
+                remoteSide(live: live, controlActive: controlActive, route: route, tools: tools).frame(width: 300)
             }
-        } label: {
-            Label(title, systemImage: symbol)
-                .fixedSize()
+            VStack(alignment: .leading, spacing: 16) {
+                remotePhoneStage
+                remoteSide(live: live, controlActive: controlActive, route: route, tools: tools)
+            }
         }
-        .buttonStyle(NexusPillStyle(prominent: !audioOnly))
-        .disabled(screen.connecting || (screen.usbActive && !running))
+    }
+
+    private var remotePhoneStage: some View {
+        embeddedPhone(height: 600)
+            .frame(maxWidth: .infinity, minHeight: 640)
+            .padding(.vertical, 20)
+            .glassPanel(radius: 22)
+    }
+
+    private func remoteSide(live: Bool, controlActive: Bool, route: ScreenMirror.ControlRoute,
+                            tools: [(String, String, Bool, () -> Void)]) -> some View {
+        let screen = model.screen
+        let routeName = switch route {
+        case .inApp: "Dentro do app"
+        case .scrcpy: "Janela do scrcpy"
+        case .mirror: "Compartilhamento de tela"
+        }
+        return VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    StatusDot(color: live ? .red : palette.fill, pulsing: live, size: 8)
+                    Text(live ? "Controle ao vivo" : (model.active ? "Pronto para controlar" : "Aguardando conexão"))
+                        .font(.system(size: 13, weight: .bold))
+                }
+                Text("Use mouse e teclado do Mac para controlar o celular. Clique direito é Voltar; arraste arquivos para a tela para enviá-los.")
+                    .font(.system(size: 12.5)).foregroundStyle(palette.muted).lineSpacing(2)
+                Button {
+                    if controlActive || screen.inAppStarting { screen.endAll() } else { startControl() }
+                } label: {
+                    Text(controlActive || screen.inAppStarting ? "Encerrar controle" : "Iniciar controle")
+                        .font(.system(size: 13, weight: .semibold)).frame(maxWidth: .infinity).padding(.vertical, 9)
+                        .background(palette.panel2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.line) }
+                }
+                .buttonStyle(.plain)
+                .disabled(!(controlActive || screen.inAppStarting || canStartControl))
+                if screen.connecting { ProgressView("Conectando ao Android…").controlSize(.small) }
+                if let feedback = screen.feedback, !screen.requesting { empty(feedback).font(.system(size: 12)) }
+                if let feedback = model.actionFeedback { empty(feedback).font(.system(size: 12)) }
+            }
+            .padding(16)
+            .glassPanel(radius: 20)
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
+                ForEach(Array(tools.enumerated()), id: \.offset) { _, tool in
+                    Button { tool.3() } label: {
+                        VStack(spacing: 6) {
+                            Image(systemName: tool.0).font(.system(size: 18))
+                            Text(tool.1).font(.system(size: 11.5)).lineLimit(1).minimumScaleFactor(0.8)
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!tool.2).opacity(tool.2 ? 1 : 0.4)
+                    .accessibilityLabel(tool.1)
+                }
+            }
+            .padding(10)
+            .glassPanel(radius: 20)
+
+            VStack(alignment: .leading, spacing: 8) {
+                infoRow("Aparelho", model.selected?.name ?? "—")
+                infoRow("Rota", routeName)
+                infoRow("Conexão", model.active ? "Rede local" : "Desconectado")
+                HStack(spacing: 8) {
+                    if screen.requesting {
+                        ProgressView().controlSize(.small)
+                        Text("Autorize a prévia no Android.").font(.system(size: 12)).foregroundStyle(palette.muted)
+                    } else if screen.sharing {
+                        Button("Parar prévia") { screen.end() }.buttonStyle(NexusPillStyle(compact: true))
+                        Button("Ampliar") { openWindow(id: "mirror") }.buttonStyle(NexusPillStyle(compact: true))
+                    } else {
+                        Button("Mostrar prévia") { model.requestMirror() }
+                            .buttonStyle(NexusPillStyle(compact: true)).disabled(!model.canMirror)
+                            .help("Autorize o espelhamento no Android para mostrar a prévia.")
+                    }
+                    Spacer()
+                    Menu {
+                        Button("Configurar Wi-Fi") { wirelessClipboardSetup = true }
+                        Button("Controlar por USB") { screen.launchScrcpy(audioOnly: false) }
+                            .disabled(screen.usbActive || screen.connecting)
+                        Button("Ouvir por USB") { screen.launchScrcpy(audioOnly: true) }
+                            .disabled(screen.usbActive || screen.connecting)
+                    } label: { Image(systemName: "ellipsis.circle") }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .accessibilityLabel("Opções de conexão")
+                }
+                .padding(.top, 4)
+            }
+            .font(.system(size: 12.5))
+            .padding(16)
+            .glassPanel(radius: 20)
+        }
+    }
+
+    private func infoRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).foregroundStyle(palette.muted)
+            Spacer()
+            Text(value).lineLimit(1)
+        }
     }
 
     private var settings: some View {

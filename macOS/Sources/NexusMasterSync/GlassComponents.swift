@@ -171,3 +171,17 @@ struct SwitchRow: View {
         }
     }
 }
+
+/// A scroll view that, in snapshot tests, lays its content out directly (ImageRenderer cannot draw scrolling content).
+struct SnapshotAwareScroll<Content: View>: View {
+    @ViewBuilder var content: Content
+    @Environment(\.nexusFlatBackdrop) private var snapshot
+
+    var body: some View {
+        if snapshot {
+            content.frame(maxHeight: .infinity, alignment: .top)
+        } else {
+            ScrollView { content }
+        }
+    }
+}
