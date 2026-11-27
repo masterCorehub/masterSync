@@ -15,7 +15,7 @@ struct GalleryBrowser: View {
     @State private var favoritesOnly = false
     @State private var showFilters = false
     @State private var selection = GallerySelection()
-    @State private var width: CGFloat = 900
+    @State private var width: CGFloat = 0
     @Environment(\.calendar) private var calendar
     @Environment(\.colorScheme) private var scheme
 
@@ -56,7 +56,9 @@ struct GalleryBrowser: View {
 
     var body: some View {
         let layout = sideBySide ? AnyLayout(HStackLayout(alignment: .top, spacing: 16)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
-        return layout {
+        return VStack(alignment: .leading, spacing: 0) {
+            WidthProbe(width: $width)
+            layout {
             VStack(alignment: .leading, spacing: 14) {
                 toolbar
                 if !selection.isEmpty { selectionBar }
@@ -69,10 +71,8 @@ struct GalleryBrowser: View {
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
             side.frame(width: sideBySide ? 300 : nil)
+            }
         }
-        .background(GeometryReader { proxy in
-            Color.clear.onChange(of: proxy.size.width, initial: true) { _, new in width = new }
-        })
         .onAppear { gallery.refresh() }
         .onChange(of: gallery.filters) { gallery.filtersChanged() }
         .onChange(of: visibleItems.map(\.id)) { _, ids in selection.prune(keeping: Set(ids)) }

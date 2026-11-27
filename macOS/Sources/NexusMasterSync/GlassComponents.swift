@@ -217,3 +217,17 @@ struct GlassToggleStyle: ToggleStyle {
         .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label }.toggleStyle(.switch) }
     }
 }
+
+/// Reports the width a container offers its content. It sits beside the content, so the number is what the parent proposes,
+/// never the width the content itself ends up taking (measuring that would keep a wide layout wide forever).
+struct WidthProbe: View {
+    @Binding var width: CGFloat
+
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear.onChange(of: proxy.size.width, initial: true) { _, new in width = new }
+        }
+        .frame(height: 0)
+        .accessibilityHidden(true)
+    }
+}

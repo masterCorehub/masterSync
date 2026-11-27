@@ -19,8 +19,8 @@ struct Dashboard: View {
     @State private var chatDraft = ""
     @State private var peerSearch = ""
     @State private var targetingFiles = false
-    @State private var notificationsWidth: CGFloat = 900
-    @State private var remoteWidth: CGFloat = 900
+    @State private var notificationsWidth: CGFloat = 0
+    @State private var remoteWidth: CGFloat = 0
     @State private var miniPresentation = MiniPlayerPresentation()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showNotices = false
@@ -1057,7 +1057,9 @@ struct Dashboard: View {
         let notices = model.notifications.notices.filter { $0.peer == model.selected?.id }
         let sideBySide = notificationsWidth >= 640
         let layout = sideBySide ? AnyLayout(HStackLayout(alignment: .top, spacing: 16)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
-        return layout {
+        return VStack(alignment: .leading, spacing: 0) {
+            WidthProbe(width: $notificationsWidth)
+            layout {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     clearAllNoticesButton
@@ -1147,10 +1149,8 @@ struct Dashboard: View {
                 }
             }
             .frame(width: sideBySide ? 300 : nil)
+            }
         }
-        .background(GeometryReader { proxy in
-            Color.clear.onChange(of: proxy.size.width, initial: true) { _, new in notificationsWidth = new }
-        })
     }
 
     private var remote: some View {
@@ -1178,14 +1178,14 @@ struct Dashboard: View {
         // One layout whose arrangement changes with the width, so the phone view is never built twice.
         let sideBySide = remoteWidth >= 676
         let layout = sideBySide ? AnyLayout(HStackLayout(alignment: .top, spacing: 16)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
-        return layout {
-            remotePhoneStage
-            remoteSide(live: live, controlActive: controlActive, route: route, tools: tools)
-                .frame(width: sideBySide ? 300 : nil)
+        return VStack(alignment: .leading, spacing: 0) {
+            WidthProbe(width: $remoteWidth)
+            layout {
+                remotePhoneStage
+                remoteSide(live: live, controlActive: controlActive, route: route, tools: tools)
+                    .frame(width: sideBySide ? 300 : nil)
+            }
         }
-        .background(GeometryReader { proxy in
-            Color.clear.onChange(of: proxy.size.width, initial: true) { _, new in remoteWidth = new }
-        })
     }
 
     private var remotePhoneStage: some View {

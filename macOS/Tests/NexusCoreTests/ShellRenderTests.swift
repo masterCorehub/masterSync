@@ -57,7 +57,7 @@ final class ShellRenderTests: XCTestCase {
 
     // MARK: Overview
 
-    private func overviewData(connected: Bool) -> OverviewData {
+    func overviewData(connected: Bool) -> OverviewData {
         OverviewData(
             name: "Pixel 9 Pro", active: connected, battery: connected ? 82 : nil, charging: connected,
             status: [("Conexão", connected ? "Rede local" : "Desconectado"), ("Notificações", "Espelhando"),
@@ -101,7 +101,7 @@ final class ShellRenderTests: XCTestCase {
 
     // MARK: Apps
 
-    private func appsData(loaded: Bool, session: Bool = false) -> AppsScreenData {
+    func appsData(loaded: Bool, session: Bool = false) -> AppsScreenData {
         let apps = loaded ? ["Câmera", "WhatsApp", "Spotify", "Nubank", "Maps", "iFood", "Gmail", "Fotos"].enumerated().map {
             AndroidApp(component: "com.example.app\($0.offset)/.Main", label: $0.element) } : []
         return AppsScreenData(phoneName: "Pixel 9 Pro", apps: apps, listLoaded: loaded,
@@ -307,5 +307,39 @@ extension ShellRenderTests {
             let image = try render(viewer, name: "visualizador-\(name)", scheme: .dark, width: 980, height: 640)
             XCTAssertEqual(image.size.height, 640, accuracy: 1)
         }
+    }
+}
+
+
+// MARK: Content never overflows its container
+
+@MainActor
+extension ShellRenderTests {
+    /// The width a view asks for when offered `offered` points: more than that means it would be cut off in a smaller window.
+    private func requestedWidth<V: View>(_ view: V, offered: CGFloat) -> CGFloat {
+        let box = SizeBox()
+        let renderer = ImageRenderer(content: MeasuringLayout(box: box) { view }.frame(width: offered, height: 900, alignment: .topLeading))
+        _ = renderer.nsImage
+        return box.size.width
+    }
+
+    func testOverviewNeverAsksForMoreWidthThanItIsOffered() {
+        for offered: CGFloat in [484, 560, 700, 850] {
+            let view = OverviewScreen(data: overviewData(connected: true), actions: OverviewActions(), extras: AnyView(EmptyView()))
+            XCTAssertLessThanOrEqual(requestedWidth(view, offered: offered), offered + 0.5, "offered \(offered)")
+        }
+    }
+
+    func testAppsScreenNeverAsksForMoreWidthThanItIsOffered() {
+        for offered: CGFloat in [484, 640] {
+            XCTAssertLessThanOrEqual(requestedWidth(AppsScreen(data: appsData(loaded: true), actions: AppsScreenActions()), offered: offered),
+                                     offered + 0.5, "offered \(offered)")
+        }
+    }
+
+    func testWidthProbeMapsWidthToLayoutChoice() {
+        XCTAssertFalse(OverviewScreen.isWide(width: 0))
+        XCTAssertFalse(OverviewScreen.isWide(width: 859))
+        XCTAssertTrue(OverviewScreen.isWide(width: 860))
     }
 }

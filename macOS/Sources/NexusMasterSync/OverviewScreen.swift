@@ -45,23 +45,25 @@ struct OverviewScreen: View {
     /// Things the design has no card for but the app keeps here (battery alert, Do Not Disturb, connect button).
     let extras: AnyView
     @Environment(\.colorScheme) private var scheme
-    @State private var width: CGFloat = 900
+    // Starts narrow: until the probe reports the real width, nothing can be wider than its container.
+    @State private var width: CGFloat = 0
     @State private var copied = false
     @State private var targetingDrop = false
 
     private var palette: NexusPalette { NexusPalette(scheme: scheme) }
     private let gap: CGFloat = 16
-    private var wide: Bool { width >= 720 }
+    static func isWide(width: CGFloat) -> Bool { width >= 860 }
+    private var wide: Bool { Self.isWide(width: width) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: gap) {
-            if wide { wideLayout } else { narrowLayout }
-            extras
+        VStack(alignment: .leading, spacing: 0) {
+            WidthProbe(width: $width)
+            VStack(alignment: .leading, spacing: gap) {
+                if wide { wideLayout } else { narrowLayout }
+                extras
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(GeometryReader { proxy in
-            Color.clear.onChange(of: proxy.size.width, initial: true) { _, new in width = new }
-        })
         .modifier(FileDropModifier(accept: actions.dropFiles, targeting: $targetingDrop))
         .overlay {
             if targetingDrop {
