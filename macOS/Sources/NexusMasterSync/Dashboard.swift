@@ -109,6 +109,13 @@ struct Dashboard: View {
         }
         .task(id: model.launcherAvailable && !(model.selected?.id ?? "").isEmpty ? model.selected?.id ?? "" : "") { model.refreshLauncher() }
         .task(id: launcherIconsKey) { model.requestLauncherIcons(for: launcherPins[model.selected?.id ?? ""] ?? []) }
+        .task(id: model.section == .overview && model.canBrowseGallery) {
+            // Keeps "Fotos recentes" current while the home screen is open.
+            while !Task.isCancelled, model.section == .overview, model.canBrowseGallery {
+                model.gallery.refreshIfStale(maxAge: 20)
+                try? await Task.sleep(for: .seconds(20))
+            }
+        }
         .task(id: shortcutsKey) {
             let peer = model.selected?.id ?? ""
             model.syncAppShortcuts(peer: peer, pinned: AppsCatalog.pinned(model.launcherLists[peer] ?? [], ids: launcherPins[peer] ?? []))
@@ -232,23 +239,14 @@ struct Dashboard: View {
 
     private func overview(size: CGSize) -> some View {
         let phone = model.selected?.name ?? "Seu Android"
-        let entries = conversationEntries.suffix(3)
-        let rows = entries.map { entry -> OverviewConversationRow in
-            switch entry {
-            case .text(let message):
-                OverviewConversationRow(id: entry.id, title: message.outgoing ? "Você" : phone,
-                                        preview: Wire.visible(message.text, limit: 120), date: message.date, outgoing: message.outgoing)
-            case .file(let item, let outgoing):
-                OverviewConversationRow(id: entry.id, title: outgoing ? "Você" : phone,
-                                        preview: item.offer.name, date: item.date, outgoing: outgoing)
-            }
-        }
-        let latestClip = model.clipboard.items.first
+        // The phone's latest photos when the gallery is on; otherwise the photos received on this Mac.
+        let recent: [OverviewPhoto] = model.canBrowseGallery
+            ? model.gallery.items.prefix(5).map { OverviewPhoto(id: $0.id, image: model.gallery.thumbnails[$0.id], isVideo: !$0.mime.hasPrefix("image/")) }
+            : mediaFiles.prefix(5).map { OverviewPhoto(id: $0.id, image: NSImage(contentsOf: $0.url), isVideo: $0.offer.mime.hasPrefix("video/")) }
         let data = OverviewData(
             name: phone, active: model.active, battery: model.selectedStatus?.battery, charging: model.selectedStatus?.charging == true,
             controls: QuickControls.items(model.quickControlInputs),
-            notices: model.notifications.notices.filter { $0.peer == model.selected?.id }, conversation: Array(rows), photos: Array(mediaFiles.prefix(7)),
-            clipboardText: latestClip?.text, clipboardDate: latestClip?.date,
+            notices: model.notifications.notices.filter { $0.peer == model.selected?.id }, recent: recent,
             audioOutput: MediaOutput.current(audioOnlyActive: model.screen.audioOnlyActive, controlActive: model.screen.usbActive),
             audioBusy: model.screen.connecting, audioLocked: model.screen.usbActive && !model.screen.audioOnlyActive)
         var actions = OverviewActions()
@@ -262,9 +260,8 @@ struct Dashboard: View {
         actions.pressControl = { model.pressQuickControl($0) }
         actions.chooseOutput = { chooseAudioOutput($0) }
         actions.openNotifications = { model.section = .notifications }
-        actions.openConversation = { model.section = .conversation }
         actions.openGallery = { model.section = .gallery }
-        actions.copyClipboard = { model.clipboard.apply($0) }
+        actions.needsThumbnail = { id in if model.canBrowseGallery { model.gallery.thumbnail(id) } }
         actions.dropFiles = model.canSendFiles ? { model.sendDroppedFiles($0) } : nil
         let extras = AnyView(VStack(alignment: .leading, spacing: 12) {
             if !model.active {

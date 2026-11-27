@@ -62,10 +62,7 @@ final class ShellRenderTests: XCTestCase {
             name: "Pixel 9 Pro", active: connected, battery: connected ? 82 : nil, charging: connected,
             controls: QuickControls.items(QuickControls.Inputs(phoneName: "Pixel 9 Pro", online: connected, dndAllowed: true, dndEnabled: false,
                 canFind: true, controlsAvailable: true, torch: false, torchAvailable: true, ringer: "normal", hasADB: connected)),
-            notices: [], conversation: connected ? [
-                OverviewConversationRow(id: "1", title: "Você", preview: "Manda aquela foto do quadro?", date: .now, outgoing: true),
-                OverviewConversationRow(id: "2", title: "Pixel 9 Pro", preview: "Proposta_final.pdf", date: .now, outgoing: false)] : [],
-            photos: [], clipboardText: connected ? "Reunião remarcada para 16h — sala 3B, link no convite." : nil, clipboardDate: .now)
+            notices: [], recent: connected ? (0..<5).map { OverviewPhoto(id: "\($0)", image: nil, isVideo: $0 == 3) } : [])
     }
 
     func testOverviewRendersConnectedAndDisconnected() throws {
