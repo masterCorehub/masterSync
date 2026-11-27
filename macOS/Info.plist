@@ -14,6 +14,10 @@
     <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
+    <key>CFBundleURLTypes</key><array><dict>
+        <key>CFBundleURLName</key><string>MasterSync</string>
+        <key>CFBundleURLSchemes</key><array><string>mastersync</string></array>
+    </dict></array>
     <key>NSLocalNetworkUsageDescription</key>
     <string>O Nexus usa a rede local para conectar os celulares que você autorizar.</string>
     <key>NSBonjourServices</key><array><string>_nexus-sync._tcp</string></array>

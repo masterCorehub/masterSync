@@ -59,6 +59,7 @@ struct AppsScreen: View {
     let data: AppsScreenData
     let actions: AppsScreenActions
     @State private var query = ""
+    @AppStorage(NexusModel.shortcutsKey) private var shortcutsOn = true
     @Environment(\.colorScheme) private var scheme
 
     private var palette: NexusPalette { NexusPalette(scheme: scheme) }
@@ -226,6 +227,14 @@ struct AppsScreen: View {
                 }
             }
             .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .glassPanel(radius: 20)
+            VStack(alignment: .leading, spacing: 4) {
+                SwitchRow(title: "Apps do Mac para os fixados", subtitle: "Cada app fixado ganha um ícone no Launchpad e no Spotlight e abre numa janela própria",
+                          isOn: $shortcutsOn, showsDivider: false)
+                Text("Ficam em ~/Applications/MasterSync Apps. Arraste um para o Dock se quiser.")
+                    .font(.system(size: 11.5)).foregroundStyle(palette.muted).lineSpacing(2)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 6).padding(.bottom, 10).frame(maxWidth: .infinity, alignment: .leading)
             .glassPanel(radius: 20)
             VStack(alignment: .leading, spacing: 6) {
                 Label("O controle continua com o celular bloqueado", systemImage: "lock.iphone")

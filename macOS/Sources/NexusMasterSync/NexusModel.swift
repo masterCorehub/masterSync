@@ -771,6 +771,42 @@ final class NexusModel: ObservableObject {
         }
     }
 
+    // MARK: Pinned apps as Mac apps
+
+    static let shortcutsKey = "pinned-app-shortcuts"
+    var shortcutsEnabled: Bool { preferences.object(forKey: Self.shortcutsKey) as? Bool ?? true }
+
+    /// Makes the Mac apps in ~/Applications/MasterSync Apps match the pinned apps (or removes them when the option is off).
+    func syncAppShortcuts(peer: String, pinned: [AndroidApp]) {
+        guard !peer.isEmpty else { return }
+        let apps = shortcutsEnabled ? pinned.map { ($0, launcherIcons[$0.id]) } : []
+        Task.detached(priority: .utility) {
+            try? AppShortcut.sync(pinned: apps, peer: peer, in: AppShortcut.defaultDirectory)
+        }
+    }
+
+    /// A pinned app was opened from the Mac (Launchpad, Dock, Spotlight): show it in a scrcpy window.
+    func openShortcut(_ url: URL) {
+        guard let target = AppShortcut.parse(url) else { return }
+        if peers.contains(where: { $0.id == target.peer }), selectedID != target.peer { selectedID = target.peer }
+        actionFeedback = "Abrindo \(target.app.label) no celular…"
+        Task {
+            // MasterSync may just have started: give the phone a little while to connect and ADB to be ready.
+            for _ in 0..<30 {
+                if let device = wirelessControlDevice(for: target.peer), online.contains(target.peer) {
+                    guard screen.scrcpyInstalled else {
+                        actionFeedback = "Instale o scrcpy para abrir apps do celular numa janela."
+                        return
+                    }
+                    screen.openAppWithScrcpy(target.app, wireless: device)
+                    return
+                }
+                try? await Task.sleep(for: .seconds(1))
+            }
+            actionFeedback = "O celular não conectou. Confira o Wi‑Fi e o controle por Wi‑Fi."
+        }
+    }
+
     func requestMirror() {
         if canMirror, let peer = selected { screen.begin(peer.id) }
     }

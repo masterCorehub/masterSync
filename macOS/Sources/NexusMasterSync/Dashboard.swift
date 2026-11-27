@@ -94,6 +94,10 @@ struct Dashboard: View {
         }
         .task(id: model.launcherAvailable && !(model.selected?.id ?? "").isEmpty ? model.selected?.id ?? "" : "") { model.refreshLauncher() }
         .task(id: launcherIconsKey) { model.requestLauncherIcons(for: launcherPins[model.selected?.id ?? ""] ?? []) }
+        .task(id: shortcutsKey) {
+            let peer = model.selected?.id ?? ""
+            model.syncAppShortcuts(peer: peer, pinned: AppsCatalog.pinned(model.launcherLists[peer] ?? [], ids: launcherPins[peer] ?? []))
+        }
         .foregroundStyle(palette.ink)
         .tint(accent)
         .toggleStyle(GlassToggleStyle())
@@ -324,6 +328,11 @@ struct Dashboard: View {
     private var launcherIconsKey: [String] {
         let peer = model.selected?.id ?? ""
         return (launcherPins[peer] ?? []) + [peer, model.launcherLists[peer] == nil ? "" : "ready"]
+    }
+
+    /// Changes when the pins, the app list, the icons that arrived or the option change, so the Mac apps are rebuilt then.
+    private var shortcutsKey: [String] {
+        launcherIconsKey + ["\(model.launcherIcons.count)", model.shortcutsEnabled ? "on" : "off"]
     }
 
     private var sidebarPinnedApps: [AndroidApp] {

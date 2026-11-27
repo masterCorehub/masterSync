@@ -21,6 +21,7 @@ struct NexusApp: App {
                 .preferredColorScheme(preferredScheme)
                 .frame(minWidth: 780, minHeight: 570)
                 .task { model.launch() }
+                .onOpenURL { model.openShortcut($0) }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     model.screen.stopUSB()
                 }
