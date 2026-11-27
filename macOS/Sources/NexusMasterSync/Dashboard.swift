@@ -243,7 +243,9 @@ struct Dashboard: View {
             name: phone, active: model.active, battery: model.selectedStatus?.battery, charging: model.selectedStatus?.charging == true,
             controls: QuickControls.items(model.quickControlInputs),
             notices: model.notifications.notices.filter { $0.peer == model.selected?.id }, conversation: Array(rows), photos: Array(mediaFiles.prefix(7)),
-            clipboardText: latestClip?.text, clipboardDate: latestClip?.date)
+            clipboardText: latestClip?.text, clipboardDate: latestClip?.date,
+            audioOutput: MediaOutput.current(audioOnlyActive: model.screen.audioOnlyActive, controlActive: model.screen.usbActive),
+            audioBusy: model.screen.connecting, audioLocked: model.screen.usbActive && !model.screen.audioOnlyActive)
         var actions = OverviewActions()
         actions.control = { model.section = .remote }
         actions.sendFile = model.canSendFiles ? { imported = true } : nil
@@ -253,6 +255,7 @@ struct Dashboard: View {
         actions.sendFileHint = model.active ? "Ative Arquivos nos dois lados" : "Conecte o celular"
         actions.photoHint = model.active ? "Ative a câmera remota no celular" : "Conecte o celular"
         actions.pressControl = { model.pressQuickControl($0) }
+        actions.chooseOutput = { chooseAudioOutput($0) }
         actions.openNotifications = { model.section = .notifications }
         actions.openConversation = { model.section = .conversation }
         actions.openGallery = { model.section = .gallery }
@@ -351,20 +354,23 @@ struct Dashboard: View {
                 onCommand: { model.mediaControl($0) }, onSeek: { model.mediaSeek(toFraction: $0) },
                 onLike: { model.mediaLike($0) }, onOpenQueue: { model.mediaQueueRefresh() },
                 onPick: { model.mediaPlay(queueItem: $0) },
-                onOutput: { target in
-                    switch target {
-                    case .mac:
-                        if let device = model.wirelessControlDevice(for: model.selected?.id) {
-                            screen.launchScrcpy(audioOnly: true, wireless: device)
-                        } else { openWirelessControlGuide() }
-                    case .phone:
-                        screen.stopUSB()
-                    }
-                },
+                onOutput: { chooseAudioOutput($0) },
                 onToggleExpanded: { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { miniPresentation.toggleExpanded() } },
                 onClose: { miniPresentation.dismiss(track: track) }, maxHeight: maxHeight)
             .padding(.trailing, 24).padding(.bottom, 20)
             .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottomTrailing)))
+        }
+    }
+
+    /// Sends the phone's sound to the Mac (through an audio-only scrcpy session) or back to the phone.
+    private func chooseAudioOutput(_ target: MediaOutput) {
+        switch target {
+        case .mac:
+            if let device = model.wirelessControlDevice(for: model.selected?.id) {
+                model.screen.launchScrcpy(audioOnly: true, wireless: device)
+            } else { openWirelessControlGuide() }
+        case .phone:
+            model.screen.stopUSB()
         }
     }
 

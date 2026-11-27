@@ -22,6 +22,10 @@ struct OverviewData {
     var photos: [ReceivedFile]
     var clipboardText: String?
     var clipboardDate: Date?
+    /// Where the phone's sound comes out now, and whether the choice can be changed right now.
+    var audioOutput: MediaOutput = .phone
+    var audioBusy = false
+    var audioLocked = false
 }
 
 /// What each card does. A nil action leaves its tile disabled.
@@ -35,6 +39,7 @@ struct OverviewActions {
     var photoHint = ""
     var scanHint = ""
     var pressControl: (QuickControl.Kind) -> Void = { _ in }
+    var chooseOutput: (MediaOutput) -> Void = { _ in }
     var openNotifications: () -> Void = {}
     var openConversation: () -> Void = {}
     var openGallery: () -> Void = {}
@@ -135,13 +140,15 @@ struct OverviewScreen: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(LinearGradient(colors: [palette.panel2, palette.panel], startPoint: .topLeading, endPoint: .bottomTrailing))
                 .frame(height: 190)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(palette.faint, lineWidth: 2).frame(width: 96, height: 160)
-                        .overlay(alignment: .bottom) { Capsule().fill(palette.faint).frame(width: 30, height: 3).padding(.bottom, 8) }
-                        .overlay { Image(systemName: "iphone.gen3").font(.system(size: 34)).foregroundStyle(palette.accent.opacity(0.8)) }
+                .overlay(alignment: .top) {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(palette.faint, lineWidth: 2).frame(width: 66, height: 108)
+                        .overlay(alignment: .bottom) { Capsule().fill(palette.faint).frame(width: 22, height: 3).padding(.bottom, 6) }
+                        .overlay { Image(systemName: "iphone.gen3").font(.system(size: 26)).foregroundStyle(palette.accent.opacity(0.8)) }
+                        .padding(.top, 14)
+                        .accessibilityHidden(true)
                 }
-                .accessibilityHidden(true)
+                .overlay(alignment: .bottom) { audioSelector.padding(10) }
             VStack(alignment: .leading, spacing: 4) {
                 Text(data.name).font(.system(size: 18, weight: .bold))
                 HStack(spacing: 6) {
@@ -172,6 +179,40 @@ struct OverviewScreen: View {
         .padding(18)
         .frame(maxHeight: .infinity, alignment: .top)
         .glassPanel(radius: 20)
+    }
+
+    /// Where the phone's sound comes out: on the phone itself, or on the Mac's speakers.
+    private var audioSelector: some View {
+        VStack(spacing: 5) {
+            Text("SOM DO CELULAR").font(.system(size: 9.5, weight: .semibold)).tracking(0.7).foregroundStyle(palette.muted)
+            HStack(spacing: 3) {
+                audioSegment("No Mac", "laptopcomputer", .mac)
+                audioSegment("No celular", "iphone", .phone)
+            }
+            .padding(3)
+            .background(palette.input, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.line) }
+        }
+        .opacity(data.active ? 1 : 0.5)
+    }
+
+    private func audioSegment(_ title: String, _ icon: String, _ target: MediaOutput) -> some View {
+        let selected = data.audioOutput == target
+        return Button { if !selected { actions.chooseOutput(target) } } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 11))
+                Text(title).font(.system(size: 11.5, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 6)
+            .background(selected ? palette.panel2 : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .shadow(color: .black.opacity(selected ? 0.12 : 0), radius: 3, y: 1)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(data.audioBusy || data.audioLocked || !data.active)
+        .help(data.audioLocked ? "O áudio está no controle remoto. Encerre-o para trocar a saída." : "Escolha onde o som do celular sai")
+        .accessibilityLabel("Som \(title.lowercased())")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func controlButton(_ control: QuickControl) -> some View {
