@@ -27,7 +27,7 @@ final class PixelFilesModelTests: XCTestCase {
         model.shell = { command in
             calls.addShell(command)
             if fail { throw NexusError.transfer("Sem ADB") }
-            if command.hasPrefix("ls -la") { return listing }
+            if command.hasPrefix("ls -la") { return command.hasSuffix("/'") ? listing : "lrw-r--r-- 1 root root 21 2021-12-31 21:00 /sdcard -> /storage/self/primary" }
             if command.hasPrefix("df") { return "Filesystem 1K-blocks Used Available Use% Mounted on\n/dev/fuse 1000000 600000 400000 60% /storage" }
             if command.hasPrefix("du") { return "300000\t/sdcard/DCIM\n100000\t/sdcard/Music" }
             return "Download 38\nDCIM 1204\n"
@@ -43,7 +43,8 @@ final class PixelFilesModelTests: XCTestCase {
         XCTAssertEqual(model.entries.map(\.name), ["DCIM", "Download", "nota.txt"])
         XCTAssertNil(model.error)
         XCTAssertFalse(model.loading)
-        XCTAssertTrue(calls.shellCommands.contains("ls -la '/sdcard'"))
+        // /sdcard is a symbolic link on real phones: without the final slash `ls` shows the link, not the folder.
+        XCTAssertTrue(calls.shellCommands.contains("ls -la '/sdcard/'"))
     }
 
     func testOverviewLoadsStorageCountsAndTheBar() async {

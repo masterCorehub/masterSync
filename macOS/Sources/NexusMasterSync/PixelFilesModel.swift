@@ -46,7 +46,8 @@ final class PixelFilesModel: ObservableObject {
         loading = true
         defer { if mine == generation { loading = false } }
         do {
-            let output = try await run("ls -la \(PixelPath.quoted(target))")
+            // The trailing slash makes `ls` open the folder even when the path is a symbolic link (/sdcard is one on most phones).
+            let output = try await run("ls -la \(PixelPath.quoted(target.hasSuffix("/") ? target : target + "/"))")
             guard mine == generation else { return }
             entries = PixelListing.parse(output)
         } catch {

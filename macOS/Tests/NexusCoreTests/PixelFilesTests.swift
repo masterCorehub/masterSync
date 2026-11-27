@@ -209,4 +209,38 @@ final class PixelFilesTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: file) }
         XCTAssertThrowsError(try FolderZip.zip(file, into: FileManager.default.temporaryDirectory))
     }
+
+    // MARK: Output copied from a real phone (Galaxy S23+, Android 17)
+
+    func testRealRootListingOfAPhone() {
+        let real = """
+        total 262
+        drwxrws---  4 u0_a316  media_rw  3452 2026-11-08 17:25 .trash-storage
+        drwxrws---  2 u0_a316  media_rw  3452 2024-09-30 07:15 Alarms
+        drwxrws--x  6 media_rw media_rw  3452 2024-12-26 09:59 Android
+        drwxrws---  2 u0_a316  media_rw  3452 2025-12-31 20:48 DARK URBAN
+        drwxrws--- 22 u0_a316  media_rw  3452 2026-08-23 20:01 DCIM
+        -rwxrwx---  1 u0_a316  media_rw 140159 2026-07-30 15:35 0186830391521468072_correios_pac.pdf
+        """
+        let entries = PixelListing.parse(real)
+        XCTAssertEqual(entries.map(\.name), ["Alarms", "Android", "DARK URBAN", "DCIM", "0186830391521468072_correios_pac.pdf"])
+        XCTAssertEqual(entries.last?.size, 140159)
+        XCTAssertTrue(entries.dropLast().allSatisfy(\.isDirectory))
+        XCTAssertTrue(entries.allSatisfy(\.isSafe))
+    }
+
+    func testTheSdcardSymlinkAloneIsNotAFolderListing() {
+        // What `ls -la /sdcard` (no final slash) prints on a real phone: the link itself.
+        let entries = PixelListing.parse("lrw-r--r-- 1 root root 21 2021-12-31 21:00 /sdcard -> /storage/self/primary")
+        XCTAssertFalse(entries.contains { $0.isDirectory })
+    }
+
+    func testRealDfOfAPhone() throws {
+        let storage = try XCTUnwrap(PixelStorage.parse(df: """
+        Filesystem     1K-blocks      Used Available Use% Mounted on
+        /dev/fuse      482768844 232127684 250510088  49% /storage/emulated
+        """))
+        XCTAssertEqual(PixelStorage.gigabytes(storage.free), "257 GB")
+    }
 }
+
