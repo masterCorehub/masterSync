@@ -89,38 +89,11 @@ struct OverviewScreen: View {
         }
     }
 
-    // MARK: The phone
+    // MARK: Command center (only the controls: the phone's name and battery live in the sidebar)
 
     private var deviceCard: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 14) {
-                RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.faint, lineWidth: 2).frame(width: 46, height: 80)
-                    .overlay(alignment: .bottom) { Capsule().fill(palette.faint).frame(width: 14, height: 2.5).padding(.bottom, 6) }
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(data.name).font(.system(size: 20, weight: .bold)).lineLimit(1)
-                    HStack(spacing: 6) {
-                        StatusDot(color: data.active ? palette.fill : palette.faint, pulsing: data.active)
-                        Text(data.active ? "Conectado pela rede local" : "Desconectado")
-                            .font(.system(size: 12.5)).foregroundStyle(data.active ? palette.accent : palette.muted)
-                    }
-                }
-            }
-            HStack(alignment: .firstTextBaseline) {
-                Text(data.battery.map { "\($0)%" } ?? "—").font(.system(size: 52, weight: .bold)).tracking(-1.5)
-                Spacer()
-                if data.charging, data.battery != nil { Text("carregando").font(.system(size: 12.5)).foregroundStyle(palette.muted) }
-            }
-            if let battery = data.battery {
-                GeometryReader { bar in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(palette.track)
-                        Capsule().fill(palette.fill).frame(width: bar.size.width * CGFloat(min(max(battery, 0), 100)) / 100)
-                    }
-                }.frame(height: 6).padding(.top, -10)
-                .accessibilityElement(children: .ignore).accessibilityLabel("Bateria \(battery) por cento")
-            }
-            Rectangle().fill(palette.line).frame(height: 1)
+            Text("CENTRAL DE COMANDOS").font(.system(size: 10.5, weight: .semibold)).tracking(0.7).foregroundStyle(palette.muted)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 14) {
                 ForEach(data.controls) { roundButton($0) }
             }
