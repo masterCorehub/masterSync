@@ -99,7 +99,7 @@ fun FeatureSheet(feature: Feature, nexus: NexusController, actions: NexusActions
                             Text(feature.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                             Muted(feature.summary)
                         }
-                        Switch(feature.enabled, { setEnabled(feature.id, it, nexus, options, actions) },
+                        Switch(feature.enabled, { setFeatureEnabled(feature.id, it, nexus, options, actions) },
                             colors = SwitchDefaults.colors(checkedTrackColor = c.accent, checkedThumbColor = c.accentInk,
                                 uncheckedTrackColor = c.control, uncheckedThumbColor = c.muted, uncheckedBorderColor = c.border),
                             modifier = Modifier.semantics { contentDescription = "Ligar ${feature.title}" })
@@ -118,7 +118,7 @@ fun FeatureSheet(feature: Feature, nexus: NexusController, actions: NexusActions
     }
 }
 
-private fun setEnabled(id: FeatureId, on: Boolean, nexus: NexusController, o: NexusController.Options,
+fun setFeatureEnabled(id: FeatureId, on: Boolean, nexus: NexusController, o: NexusController.Options,
                        actions: NexusActions) = when (id) {
     FeatureId.Clipboard -> nexus.update(o.copy(clipboard = on))
     FeatureId.Files -> nexus.update(o.copy(files = on))

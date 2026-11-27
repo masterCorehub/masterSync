@@ -60,6 +60,15 @@ import com.nexus.mastersync.ui.features.buildFeatures
 import com.nexus.mastersync.ui.features.rememberSystemAccess
 import com.nexus.mastersync.ui.home.HomeScreen
 import com.nexus.mastersync.ui.sheet.FeatureSheet
+import com.nexus.mastersync.ui.onboarding.Onboarding
+import com.nexus.mastersync.ui.onboarding.OnboardingPage
+import com.nexus.mastersync.ui.onboarding.OnboardingScreen
+import com.nexus.mastersync.ui.components.Pill
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import com.nexus.mastersync.ui.theme.LocalNexusColors
 import com.nexus.mastersync.ui.theme.NexusBackdrop
 import com.nexus.mastersync.ui.theme.NexusTheme
@@ -91,6 +100,12 @@ fun NexusScreen(
     val access = rememberSystemAccess()
     val features = buildFeatures(options, permission, status.connected != null, background, access,
         BuildConfig.NOTIFICATION_RELAY)
+    val context = LocalContext.current
+    val onboardingPrefs = remember { context.getSharedPreferences("onboarding", android.content.Context.MODE_PRIVATE) }
+    var onboarding by rememberSaveable {
+        mutableStateOf<OnboardingPage?>(
+            if (Onboarding.shouldShow(onboardingPrefs.getBoolean("done", false), status.peers.isNotEmpty())) OnboardingPage.Welcome else null)
+    }
     val dark = options.theme == "dark" || options.theme == "system" && isSystemInDarkTheme()
 
     val view = LocalView.current
@@ -153,7 +168,12 @@ fun NexusScreen(
                                 onOpenFeature = { navigate(Tab.Home); setOpenFeature(it) },
                                 onOpenConnection = { navigate(Tab.Connection) })
                         }
-                        Tab.Connection -> Scrolling { ConnectionScreen(nexus, background, actions) }
+                        Tab.Connection -> Scrolling {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                ConnectionScreen(nexus, background, actions)
+                                Pill("Rever introdução", { onboarding = OnboardingPage.Welcome })
+                            }
+                        }
                     }
                 }
             }
@@ -161,6 +181,13 @@ fun NexusScreen(
 
         features.firstOrNull { it.id == openFeature }?.let { feature ->
             FeatureSheet(feature, nexus, actions, documents, scannerBusy) { setOpenFeature(null) }
+        }
+
+        onboarding?.let { page ->
+            OnboardingScreen(page, { onboarding = it }, status, features, options, nexus, actions, setOpenFeature) {
+                onboardingPrefs.edit().putBoolean("done", true).apply()
+                onboarding = null
+            }
         }
 
         if (screenRequest != null) {
