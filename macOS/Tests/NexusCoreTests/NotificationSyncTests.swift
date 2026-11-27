@@ -134,6 +134,66 @@ final class NotificationSyncTests: XCTestCase {
         XCTAssertEqual(Set(sync.notices.map(\.remoteID)), ["clear", "elsewhere"])
     }
 
+    // MARK: Verification codes
+
+    @MainActor private func found(_ sync: NotificationSync) -> () -> [String] {
+        var codes: [String] = []
+        sync.didFindCode = { code, app in codes.append("\(app):\(code)") }
+        return { codes }
+    }
+
+    private var nowMillis: Int64 { Int64(Date.now.timeIntervalSince1970 * 1000) }
+
+    @MainActor func testACodeInTheTextIsAnnouncedOnce() {
+        let sync = NotificationSync(); sync.enabled = true
+        let codes = found(sync)
+        let message = notice("a", at: nowMillis, text: "Seu código de verificação é 482 913")
+        sync.handle(message, peer: "phone")
+        sync.handle(message, peer: "phone")
+        XCTAssertEqual(codes(), ["App:482913"])
+    }
+
+    @MainActor func testTheCodeSentByThePhoneWorksWhenTheTextIsHidden() {
+        let sync = NotificationSync(); sync.enabled = true
+        let codes = found(sync)
+        var message = notice("b", at: nowMillis, text: "")
+        message.name = "Notificação recebida"
+        message.code = "739104"
+        sync.handle(message, peer: "phone")
+        XCTAssertEqual(codes(), ["App:739104"])
+    }
+
+    @MainActor func testAnInvalidCodeFromThePhoneIsNotTrusted() {
+        let sync = NotificationSync(); sync.enabled = true
+        let codes = found(sync)
+        var message = notice("c", at: nowMillis, text: "Olá")
+        message.code = "12; rm -rf"
+        sync.handle(message, peer: "phone")
+        XCTAssertTrue(codes().isEmpty)
+    }
+
+    @MainActor func testOldNoticesNeverCopyACode() {
+        let sync = NotificationSync(); sync.enabled = true
+        let codes = found(sync)
+        sync.handle(notice("d", at: nowMillis - 600_000, text: "Código 482913"), peer: "phone")
+        XCTAssertTrue(codes().isEmpty)
+    }
+
+    @MainActor func testNoticesFromBlockedAppsAreIgnored() {
+        let sync = NotificationSync(); sync.enabled = true
+        sync.blocked = ["test.app"]
+        let codes = found(sync)
+        sync.handle(notice("e", at: nowMillis, text: "Código 482913"), peer: "phone")
+        XCTAssertTrue(codes().isEmpty)
+    }
+
+    @MainActor func testPlainChatIsNotACode() {
+        let sync = NotificationSync(); sync.enabled = true
+        let codes = found(sync)
+        sync.handle(notice("f", at: nowMillis, text: "bora às 1930 no futebol?"), peer: "phone")
+        XCTAssertTrue(codes().isEmpty)
+    }
+
     private func notice(_ id: String, at: Int64, canDismiss: Bool = true, text: String = "t") -> Message {
         var message = Message("notice")
         message.id = id

@@ -97,6 +97,7 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
             return
         }
         guard let entry = makeEntry(message, peer: peer) else { return }
+        announceCode(message, entry: entry)
         if let signature = hidden[id] {
             if signature == Self.signature(entry) || Self.isPlaceholder(entry) { return }
             // Hidden while Android redacted it: the first real content is what the user hid.
@@ -120,6 +121,19 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
         content.threadIdentifier = entry.group
         content.categoryIdentifier = entry.canReply ? "nexus.reply" : (entry.canDismiss ? "nexus.notice" : "")
         center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+    }
+
+    /// Called with a verification code (digits) and the app it came from, once per notice.
+    var didFindCode: ((String, String) -> Void)?
+    private var codeTracker = OtpCode.Tracker()
+
+    /// The phone sends the code on its own when it hides the text (locked phone); otherwise it is read from the text.
+    private func announceCode(_ message: Message, entry: Notice) {
+        let sent = message.code.flatMap { OtpCode.isValid($0) ? $0 : nil }
+        let text = [message.name, message.text].compactMap { $0 }.joined(separator: " ")
+        guard message.type == "notice", let code = sent ?? OtpCode.find(in: text), OtpCode.isFresh(entry.date),
+              codeTracker.shouldHandle(id: entry.id, code: code) else { return }
+        didFindCode?(code, entry.app)
     }
 
     private func makeEntry(_ message: Message, peer: String) -> Notice? {

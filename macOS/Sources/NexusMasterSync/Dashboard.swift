@@ -1033,7 +1033,9 @@ struct Dashboard: View {
                     SwitchRow(title: "Não Perturbe no Android", subtitle: "Silencia o celular", isOn: Binding(
                         get: { model.androidDnd?.dndEnabled == true }, set: { model.setAndroidDnd($0) }))
                         .disabled(!model.active || model.androidDnd?.dndAllowed != true)
-                    SwitchRow(title: "Silenciar avisos no Mac", isOn: $model.quiet, showsDivider: false)
+                    SwitchRow(title: "Silenciar avisos no Mac", isOn: $model.quiet)
+                    SwitchRow(title: "Copiar códigos de verificação", subtitle: "Copia o código de SMS e e-mails e avisa no canto da tela",
+                              isOn: $model.codeAutofill, showsDivider: false)
                     Button("Autorizar Central de Notificações") { model.notifications.askPermission() }
                         .buttonStyle(NexusPillStyle(compact: true)).padding(.vertical, 10)
                     if let status = model.notifications.authorization { empty(status).font(.system(size: 11.5)) }

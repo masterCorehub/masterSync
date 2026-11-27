@@ -215,6 +215,10 @@ final class NexusModel: ObservableObject {
     let files: FileTransfers
     let pixelFiles = PixelFilesModel()
     private var pixelSerial: String?
+    private var codePopup = CodePopupController()
+    @Published var codeAutofill = UserDefaults.standard.object(forKey: "code-autofill") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(codeAutofill, forKey: "code-autofill") }
+    }
     @Published var openOnReceive = UserDefaults.standard.bool(forKey: "open-on-receive") {
         didSet { UserDefaults.standard.set(openOnReceive, forKey: "open-on-receive") }
     }
@@ -273,6 +277,7 @@ final class NexusModel: ObservableObject {
         screen.send = { [weak self] in self?.server?.send($1, to: $0) }
         gallery.send = { [weak self] in self?.server?.send($1, to: $0) }
         configurePixelFiles()
+        notifications.didFindCode = { [weak self] code, app in self?.receiveCode(code, from: app) }
         files.didReceive = { [weak self] file in
             self?.openIfAsked(file)
             self?.gallery.received(file)
@@ -776,6 +781,18 @@ final class NexusModel: ObservableObject {
         case .scrcpy: screen.openAppWithScrcpy(app, wireless: target)
         case .mirror: screen.beginControl(peer, wireless: target, open: app)
         }
+    }
+
+    // MARK: Verification codes
+
+    /// A verification code arrived in a notification: copy it (without syncing it anywhere) and tell the person.
+    private func receiveCode(_ code: String, from app: String) {
+        guard codeAutofill, OtpCode.isValid(code) else { return }
+        // The clipboard sync would otherwise send the code to the phone and keep it in the history.
+        clipboard.ignoreNext()
+        CodeClipboard.copy(code)
+        codePopup.show(code: code, app: app)
+        addEvent("Código copiado de \(app)", "key")
     }
 
     // MARK: Files

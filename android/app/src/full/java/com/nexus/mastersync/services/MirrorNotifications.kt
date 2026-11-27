@@ -206,6 +206,13 @@ class MirrorNotifications : NotificationListenerService(), NotificationRelay {
             .put("name", if (redacted) "Notificação recebida" else extras.getCharSequence(Notification.EXTRA_TITLE)?.take(120)?.toString() ?: label)
             .put("text", if (redacted) "" else extras.getCharSequence(Notification.EXTRA_TEXT)?.take(600)?.toString().orEmpty())
             .put("canDismiss", sbn.isClearable).put("canReply", !redacted && replyAction(sbn) != null).put("at", sbn.postTime)
+        // A verification code is the one thing worth sending even when the text is hidden (locked phone); the user's own
+        // "hide notification content" setting still hides it.
+        if (!nexus.options.value.hideNotifications) {
+            val text = listOf(Notification.EXTRA_TITLE, Notification.EXTRA_TEXT, Notification.EXTRA_BIG_TEXT)
+                .mapNotNull { extras.getCharSequence(it)?.toString() }.joinToString(" ").take(1000)
+            com.nexus.mastersync.services.OtpCode.find(text)?.let { message.put("code", it) }
+        }
         icon(sbn)?.let { message.put("data", it) }
         return message
     }

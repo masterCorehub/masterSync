@@ -148,6 +148,7 @@ public struct Message: Codable {
     public var mirror: Bool?
     public var findPhone: Bool?
     public var deviceControls: Bool?
+    public var code: String?
     public var control: String?
     public var enabled: Bool?
     public var torch: Bool?
