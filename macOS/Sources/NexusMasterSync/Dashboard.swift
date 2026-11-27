@@ -20,6 +20,7 @@ struct Dashboard: View {
     @AppStorage("android-launcher-pins") private var storedLauncherPins = Data()
     @State private var chatDraft = ""
     @State private var peerSearch = ""
+    @State private var targetingFiles = false
     @State private var showNotices = false
     @State private var connectionGuide = false
     @State private var confirmTemporaryConnection = false
@@ -1075,26 +1076,65 @@ struct Dashboard: View {
     }
 
     private var files: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            if let feedback = model.files.feedback { empty(feedback) }
-            ForEach(model.files.progress) { transfer in
-                ProgressView(value: transfer.fraction) {
-                    Label(transfer.name, systemImage: transfer.sending ? "arrow.up" : "arrow.down")
-                } currentValueLabel: {
-                    Text(transfer.verifying ? "Verificando…" : "\(Int(transfer.fraction * 100))%")
+        VStack(alignment: .leading, spacing: 16) {
+            Button { imported = true } label: {
+                VStack(spacing: 10) {
+                    IconBadge(systemName: "arrow.up.doc", size: 54)
+                    Text("Arraste arquivos aqui para enviar ao \(model.selected?.name ?? "celular")")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("ou clique para escolher · salvos em Downloads/MasterSync")
+                        .font(.system(size: 12.5)).foregroundStyle(palette.muted)
                 }
+                .frame(maxWidth: .infinity).frame(height: 190)
+                .background(targetingFiles ? palette.accentSurface : palette.panel, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .strokeBorder(targetingFiles ? palette.accent : palette.faint, style: StrokeStyle(lineWidth: 1.5, dash: [7, 5]))
+                }
+                .contentShape(Rectangle())
             }
-            Text("Recebidos").font(.headline).accessibilityAddTraits(.isHeader)
+            .buttonStyle(.plain)
+            .disabled(!model.canSendFiles)
+            .opacity(model.canSendFiles ? 1 : 0.55)
+            .accessibilityLabel("Enviar arquivo ao celular")
+            if let feedback = model.files.feedback { empty(feedback) }
+            if !model.files.progress.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(model.files.progress) { transfer in
+                        HStack(spacing: 12) {
+                            Image(systemName: transfer.sending ? "arrow.up.right" : "arrow.down.left")
+                                .font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.accent)
+                                .frame(width: 36, height: 36)
+                                .background(palette.panel2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Text(transfer.name).font(.system(size: 13.5, weight: .semibold)).lineLimit(1).truncationMode(.middle)
+                                    Spacer()
+                                    Text(transfer.verifying ? "Verificando…" : "\(Int(transfer.fraction * 100))%")
+                                        .font(.system(size: 12).monospacedDigit()).foregroundStyle(palette.muted)
+                                }
+                                ProgressView(value: transfer.fraction).progressViewStyle(.linear).tint(palette.fill)
+                            }
+                        }
+                        .padding(.vertical, 12)
+                        .overlay(alignment: .bottom) { Rectangle().fill(palette.line).frame(height: 1) }
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 2)
+                .glassPanel(radius: 20)
+            }
+            Text("Recebidos").font(.system(size: 13, weight: .bold)).accessibilityAddTraits(.isHeader)
             receivedGallery(model.files.received, empty: "Nenhum arquivo recebido.")
-            Text("Enviados").font(.headline).accessibilityAddTraits(.isHeader)
+            Text("Enviados").font(.system(size: 13, weight: .bold)).accessibilityAddTraits(.isHeader)
             receivedGallery(model.files.sent, empty: "Nenhum arquivo enviado.")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .dropDestination(for: URL.self) { urls, _ in
+            targetingFiles = false
             guard model.canSendFiles, let file = urls.first, file.isFileURL else { return false }
             model.sendFile(file)
             return true
-        }
+        } isTargeted: { targetingFiles = $0 && model.canSendFiles }
     }
 
     private var notifications: some View {
@@ -1670,7 +1710,7 @@ struct Dashboard: View {
                 if libraryGrouping != .none {
                     LibraryDateHeading(date: group.date, grouping: libraryGrouping)
                 }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 12)], spacing: 16) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 10)], spacing: 14) {
                     ForEach(group.items) { item in
                         let available = FileManager.default.fileExists(atPath: item.url.path)
                         Button { preview = item.url } label: {
@@ -1729,8 +1769,8 @@ private struct ReceivedTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(palette.accentSurface)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(palette.panel2)
                 .aspectRatio(1, contentMode: .fit)
                 .overlay {
                     GeometryReader { canvas in
@@ -1744,9 +1784,9 @@ private struct ReceivedTile: View {
                         }
                     }
                 }
-                .clipShape(.rect(cornerRadius: 10))
+                .clipShape(.rect(cornerRadius: 14, style: .continuous))
                 .accessibilityHidden(true)
-            Text(item.offer.name).font(.subheadline.weight(.medium))
+            Text(item.offer.name).font(.system(size: 12, weight: .medium))
                 .lineLimit(1).truncationMode(.middle)
         }
         .task(id: item.url) {
