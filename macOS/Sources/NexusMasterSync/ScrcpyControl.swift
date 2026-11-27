@@ -37,21 +37,42 @@ enum ScrcpyControl {
     }
 
     nonisolated static func keycode(action: UInt8, keycode: Int32, metaState: Int32 = 0) -> Data {
-        Data([0, action] + be(keycode) + be(Int32(0)) + be(metaState))
+        var bytes: [UInt8] = [0, action]
+        bytes += be(keycode)
+        bytes += be(Int32(0))
+        bytes += be(metaState)
+        return Data(bytes)
     }
 
     nonisolated static func touch(action: UInt8, x: Int32, y: Int32, width: UInt16, height: UInt16, pressed: Bool) -> Data {
         let pressure: UInt16 = pressed ? 0xFFFF : 0
         let actionButton: Int32 = action == Action.move ? 0 : 1
         let buttons: Int32 = pressed ? 1 : 0
-        return Data([2, action] + be(mousePointer) + be(x) + be(y) + be(width) + be(height) + be(pressure)
-                    + be(actionButton) + be(buttons))
+        // Built step by step: one long `+` chain is too much for the older compilers (the CI's) to type-check.
+        var bytes: [UInt8] = [2, action]
+        bytes += be(mousePointer)
+        bytes += be(x)
+        bytes += be(y)
+        bytes += be(width)
+        bytes += be(height)
+        bytes += be(pressure)
+        bytes += be(actionButton)
+        bytes += be(buttons)
+        return Data(bytes)
     }
 
     /// Scroll amounts are in wheel steps; the protocol carries them as a fixed-point fraction of 16 steps.
     nonisolated static func scroll(x: Int32, y: Int32, width: UInt16, height: UInt16, horizontal: Float, vertical: Float) -> Data {
         func fixed(_ steps: Float) -> Int16 { Int16(max(-1, min(1, steps / 16)) * 32767) }
-        return Data([3] + be(x) + be(y) + be(width) + be(height) + be(fixed(horizontal)) + be(fixed(vertical)) + be(Int32(0)))
+        var bytes: [UInt8] = [3]
+        bytes += be(x)
+        bytes += be(y)
+        bytes += be(width)
+        bytes += be(height)
+        bytes += be(fixed(horizontal))
+        bytes += be(fixed(vertical))
+        bytes += be(Int32(0))
+        return Data(bytes)
     }
 
     nonisolated static func backOrScreenOn(action: UInt8) -> Data { Data([4, action]) }
@@ -59,6 +80,9 @@ enum ScrcpyControl {
     nonisolated static func text(_ string: String) -> Data? {
         let bytes = Array(string.utf8)
         guard !bytes.isEmpty, bytes.count <= 300 else { return nil }
-        return Data([1] + be(UInt32(bytes.count)) + bytes)
+        var message: [UInt8] = [1]
+        message += be(UInt32(bytes.count))
+        message += bytes
+        return Data(message)
     }
 }
