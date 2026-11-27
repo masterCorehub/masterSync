@@ -14,6 +14,13 @@ final class NexusPaletteTests: XCTestCase {
         }
     }
 
+    func testFaintTextMeetsContrastOnWindowInBothSchemes() {
+        for scheme in schemes {
+            let palette = NexusPalette(scheme: scheme)
+            XCTAssertGreaterThanOrEqual(NexusPalette.contrast(palette.faint, palette.canvas), 4.5, "faint \(scheme)")
+        }
+    }
+
     func testAccentTextMeetsContrastOnWindowInBothSchemes() {
         for scheme in schemes {
             let palette = NexusPalette(scheme: scheme)

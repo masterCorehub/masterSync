@@ -59,8 +59,8 @@ struct MenuBarPanel: View {
 
     private var tiles: some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-            tile("document.on.clipboard", "Transferência", model.clipboardEnabled ? "Sincronizando" : "Pausada", on: model.clipboardEnabled) {
-                model.clipboardEnabled.toggle()
+            tile("document.on.clipboard", "Transferência", model.clipboardSyncActive ? "Sincronizando" : "Pausada", on: model.clipboardSyncActive) {
+                model.setClipboardSync(!model.clipboardSyncActive)
             }
             tile("bell", "Notificações", model.notificationsEnabled ? "Espelhando" : "Desligadas", on: model.notificationsEnabled) {
                 model.notificationsEnabled.toggle()

@@ -309,6 +309,19 @@ final class NexusModel: ObservableObject {
 
     var selected: Peer? { peers.first { $0.id == selectedID } ?? peers.first(where: { online.contains($0.id) }) ?? peers.first }
     var active: Bool { selected.map { online.contains($0.id) } ?? false }
+    /// True while the clipboard syncs, by the app's own channel or by ADB over Wi-Fi/USB.
+    var clipboardSyncActive: Bool { clipboardEnabled || adbClipboard.transport != nil }
+
+    /// The one switch for clipboard sync: turning it off also stops ADB sync; turning it on resumes Wi-Fi sync when a device is known.
+    func setClipboardSync(_ on: Bool) {
+        clipboardEnabled = on
+        if !on {
+            adbClipboard.stop()
+        } else if let device = adbClipboard.wirelessDevice {
+            adbClipboard.startWiFi(device: device)
+        }
+    }
+
     var selectedStatus: DeviceStatus? { selected.flatMap { deviceStatus[$0.id] } }
     var canSendFiles: Bool { selected.map { filesEnabled && online.contains($0.id) && permissions[$0.id]?.files == true } ?? false }
     var canPlayMedia: Bool { active && selected.map { permissions[$0.id]?.mediaControl == true } == true }

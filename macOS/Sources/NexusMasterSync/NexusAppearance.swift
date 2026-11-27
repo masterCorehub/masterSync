@@ -7,7 +7,7 @@ struct NexusPalette {
     var canvas: Color { tone(0x161820, 0xF4F6F9) }
     var ink: Color { tone(0xF3F4F6, 0x14161B) }
     var muted: Color { tone(0xA3A5A9, 0x696B6F) }
-    var faint: Color { tone(0x77797E, 0x8F9195) }
+    var faint: Color { tone(0x8E9095, 0x6E7075) }
 
     // Glass surfaces, translucent so the window material shows through.
     var panel: Color { tone(0xFFFFFF, 0xFFFFFF, darkAlpha: 0.06, lightAlpha: 0.50) }

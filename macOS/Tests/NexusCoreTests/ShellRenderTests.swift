@@ -145,4 +145,49 @@ final class ShellRenderTests: XCTestCase {
             XCTAssertEqual(image.size.width, 340, accuracy: 1)
         }
     }
+
+    // MARK: Review fixes
+
+    /// Sidebar at the smallest window height: the footer (Dispositivos, Configurações) must stay visible, outside the scroll.
+    func testSidebarKeepsTheFooterVisibleInASmallWindow() throws {
+        let model = NexusModel()
+        let image = try render(Sidebar(model: model, pinnedApps: [], openApp: { _ in }, manageApps: {}),
+                               name: "barra-lateral-pequena", scheme: .dark, width: 244, height: 570)
+        // The footer sits in the bottom 60 points; it must have drawn something other than the flat background there.
+        let bottom = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+            .cropping(to: CGRect(x: 0, y: bottom(of: image) - 60, width: 244, height: 60))
+        XCTAssertGreaterThan(Self.distinctColors(in: NSImage(cgImage: try XCTUnwrap(bottom), size: NSSize(width: 244, height: 60))), 12)
+    }
+
+    private func bottom(of image: NSImage) -> Int { Int(image.size.height) }
+
+    func testWindowRendersAtTheMinimumSize() throws {
+        let model = NexusModel()
+        for section in [Section.overview, .notifications, .remote, .apps, .settings, .conversation] {
+            model.section = section
+            let image = try render(Dashboard(model: model), name: "janela-minima-\(section.id.lowercased())", scheme: .dark, width: 780, height: 570)
+            XCTAssertEqual(image.size.height, 570, accuracy: 1)
+        }
+    }
+
+    func testMiniPlayerExpandedFitsALowWindow() throws {
+        let view = MiniPlayerFitProbe()
+        let image = try render(view, name: "mini-player-janela-baixa", scheme: .dark, width: 420, height: 520)
+        XCTAssertEqual(image.size.height, 520, accuracy: 1)
+    }
+}
+
+/// The expanded player with a long queue, in a 520-point-high frame: Fechar must stay on screen.
+private struct MiniPlayerFitProbe: View {
+    var body: some View {
+        var message = Message("mediaStatus")
+        message.name = "Abracadabra"; message.artist = "Lady Gaga"; message.albumName = "Mayhem"
+        message.durationMs = 223_000; message.positionMs = 56_000; message.playing = true; message.canSeek = true
+        message.canLike = true; message.hasQueue = true
+        let queue = (1...10).map { MediaQueueItem(id: Int64($0), title: "Faixa \($0)") }
+        return MiniPlayer(state: MediaPlayerState(message: message, receivedAt: .now), art: nil, phoneName: "Pixel", queue: queue,
+                          queueActive: 1, output: .mac, connecting: false, canControl: true, canChooseOutput: true, expanded: true,
+                          volume: 40, onVolume: { _ in }, onCommand: { _ in }, onSeek: { _ in }, onLike: { _ in }, onOpenQueue: {},
+                          onPick: { _ in }, onOutput: { _ in }, onToggleExpanded: {}, onClose: {}, maxHeight: 500)
+    }
 }

@@ -19,6 +19,8 @@ struct Dashboard: View {
     @State private var chatDraft = ""
     @State private var peerSearch = ""
     @State private var targetingFiles = false
+    @State private var notificationsWidth: CGFloat = 900
+    @State private var remoteWidth: CGFloat = 900
     @State private var miniPresentation = MiniPlayerPresentation()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showNotices = false
@@ -76,7 +78,12 @@ struct Dashboard: View {
             .padding(.bottom, miniPlayerReserve)
         }
         .background { NexusBackdrop() }
-        .overlay(alignment: .bottomTrailing) { miniPlayerOverlay }
+        .overlay {
+            GeometryReader { area in
+                miniPlayerOverlay(maxHeight: max(160, area.size.height - 40))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            }
+        }
         .task { volume = await outputVolume() }
         .task(id: model.selected?.id) {
             while !Task.isCancelled {
@@ -244,9 +251,9 @@ struct Dashboard: View {
             name: phone, active: model.active, battery: model.selectedStatus?.battery, charging: model.selectedStatus?.charging == true,
             status: [("Conexão", model.active ? "Rede local" : "Desconectado"),
                      ("Notificações", model.notificationsEnabled ? "Espelhando" : "Desligadas"),
-                     ("Área de transferência", model.clipboardEnabled ? "Sincronizando" : "Pausada"),
+                     ("Área de transferência", model.clipboardSyncActive ? "Sincronizando" : "Pausada"),
                      ("Arquivos", model.filesEnabled ? "Aceitando" : "Bloqueados")],
-            notices: model.notifications.notices, conversation: Array(rows), photos: Array(mediaFiles.prefix(7)),
+            notices: model.notifications.notices.filter { $0.peer == model.selected?.id }, conversation: Array(rows), photos: Array(mediaFiles.prefix(7)),
             clipboardText: latestClip?.text, clipboardDate: latestClip?.date)
         var actions = OverviewActions()
         actions.control = { model.section = .remote }
@@ -257,6 +264,7 @@ struct Dashboard: View {
         actions.openConversation = { model.section = .conversation }
         actions.openGallery = { model.section = .gallery }
         actions.copyClipboard = { model.clipboard.apply($0) }
+        actions.dropFiles = model.canSendFiles ? { model.sendDroppedFiles($0) } : nil
         let extras = AnyView(VStack(alignment: .leading, spacing: 12) {
             if !model.active {
                 Button("Conectar Android") { connectionGuide = true }
@@ -331,7 +339,7 @@ struct Dashboard: View {
     }
 
     /// The floating player: the phone's current track, collapsed or expanded, with the sound output choice.
-    @ViewBuilder private var miniPlayerOverlay: some View {
+    @ViewBuilder private func miniPlayerOverlay(maxHeight: CGFloat) -> some View {
         let screen = model.screen
         let media = model.currentMediaState
         let track = MiniPlayerPresentation.trackKey(title: media?.title, artist: media?.artist)
@@ -360,7 +368,7 @@ struct Dashboard: View {
                     }
                 },
                 onToggleExpanded: { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { miniPresentation.toggleExpanded() } },
-                onClose: { miniPresentation.dismiss(track: track) })
+                onClose: { miniPresentation.dismiss(track: track) }, maxHeight: maxHeight)
             .padding(.trailing, 24).padding(.bottom, 20)
             .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottomTrailing)))
         }
@@ -568,6 +576,10 @@ struct Dashboard: View {
             .padding(.horizontal, 10).padding(.vertical, 8)
             .background(palette.input, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .padding(.bottom, 6)
+            if peers.isEmpty {
+                Text(model.peers.isEmpty ? "Nenhum celular pareado." : "Nenhuma conversa encontrada.")
+                    .font(.system(size: 12.5)).foregroundStyle(palette.muted).padding(.top, 20)
+            }
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(peers) { peer in
@@ -718,7 +730,7 @@ struct Dashboard: View {
             .overlay { if !mine { shape.strokeBorder(palette.line) } }
             HStack(spacing: 6) {
                 Text(entry.date, style: .time)
-                if case .text(let message) = entry, mine, !message.confirmed { Text("Sem confirmação") }
+                if case .text(let message) = entry, mine, !message.confirmed { Text("Sem confirmação").foregroundStyle(palette.muted) }
             }
             .font(.system(size: 10.5)).foregroundStyle(palette.faint).padding(.horizontal, 6)
         }
@@ -876,7 +888,7 @@ struct Dashboard: View {
     private var clipboard: some View {
         VStack(alignment: .leading, spacing: 14) {
             card("Sincronização automática", icon: Section.clipboard.icon) {
-                Toggle("Sincronizar texto e imagens", isOn: $model.clipboardEnabled)
+                Toggle("Sincronizar texto e imagens", isOn: Binding(get: { model.clipboardSyncActive }, set: { model.setClipboardSync($0) }))
                 Text("Copie em um dispositivo e cole no outro. No Android, escolha o Teclado Nexus para copiar de outros aplicativos e mantenha a conexão em segundo plano.")
                     .foregroundStyle(palette.muted)
                 Toggle("Guardar histórico de texto neste Mac", isOn: $model.historyEnabled)
@@ -1043,7 +1055,9 @@ struct Dashboard: View {
 
     private var notifications: some View {
         let notices = model.notifications.notices.filter { $0.peer == model.selected?.id }
-        return HStack(alignment: .top, spacing: 16) {
+        let sideBySide = notificationsWidth >= 640
+        let layout = sideBySide ? AnyLayout(HStackLayout(alignment: .top, spacing: 16)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
+        return layout {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     clearAllNoticesButton
@@ -1122,7 +1136,7 @@ struct Dashboard: View {
                                 Spacer()
                                 GlassToggle(isOn: Binding(
                                     get: { !model.blockedApps.contains(key) },
-                                    set: { if $0 { model.blockedApps.remove(key) } else { model.blockedApps.insert(key) } }))
+                                    set: { if $0 { model.blockedApps.remove(key) } else { model.blockedApps.insert(key) } }), label: name)
                             }
                             .padding(.vertical, 8)
                             .overlay(alignment: .top) { Rectangle().fill(palette.line).frame(height: 1) }
@@ -1132,8 +1146,11 @@ struct Dashboard: View {
                     .glassPanel(radius: 20)
                 }
             }
-            .frame(width: 300)
+            .frame(width: sideBySide ? 300 : nil)
         }
+        .background(GeometryReader { proxy in
+            Color.clear.onChange(of: proxy.size.width, initial: true) { _, new in notificationsWidth = new }
+        })
     }
 
     private var remote: some View {
@@ -1158,16 +1175,17 @@ struct Dashboard: View {
                 else { openWirelessControlGuide() }
             }),
         ]
-        return ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 16) {
-                remotePhoneStage
-                remoteSide(live: live, controlActive: controlActive, route: route, tools: tools).frame(width: 300)
-            }
-            VStack(alignment: .leading, spacing: 16) {
-                remotePhoneStage
-                remoteSide(live: live, controlActive: controlActive, route: route, tools: tools)
-            }
+        // One layout whose arrangement changes with the width, so the phone view is never built twice.
+        let sideBySide = remoteWidth >= 676
+        let layout = sideBySide ? AnyLayout(HStackLayout(alignment: .top, spacing: 16)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
+        return layout {
+            remotePhoneStage
+            remoteSide(live: live, controlActive: controlActive, route: route, tools: tools)
+                .frame(width: sideBySide ? 300 : nil)
         }
+        .background(GeometryReader { proxy in
+            Color.clear.onChange(of: proxy.size.width, initial: true) { _, new in remoteWidth = new }
+        })
     }
 
     private var remotePhoneStage: some View {

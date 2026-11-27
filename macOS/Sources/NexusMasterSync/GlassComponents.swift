@@ -113,6 +113,8 @@ struct Avatar: View {
 /// The design's 36×22 switch.
 struct GlassToggle: View {
     @Binding var isOn: Bool
+    /// What VoiceOver reads; rows that already carry the name combine it themselves.
+    var label: String?
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var enabled
@@ -131,6 +133,7 @@ struct GlassToggle: View {
         .buttonStyle(.plain)
         .opacity(enabled ? 1 : 0.45)
         .accessibilityAddTraits(.isToggle)
+        .accessibilityLabel(label ?? "")
         .accessibilityValue(isOn ? "Ligado" : "Desligado")
     }
 }
@@ -146,11 +149,14 @@ struct StatusDot: View {
     var body: some View {
         Circle().fill(color).frame(width: size, height: size)
             .opacity(pulsing && dim ? 0.3 : 1)
-            .onAppear {
-                guard pulsing, !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { dim = true }
-            }
+            .onAppear { startPulse() }
+            .onChange(of: pulsing) { _, _ in startPulse() }
             .accessibilityHidden(true)
+    }
+
+    private func startPulse() {
+        guard pulsing, !reduceMotion else { dim = false; return }
+        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { dim = true }
     }
 }
 
@@ -207,5 +213,7 @@ struct GlassToggleStyle: ToggleStyle {
         }
         .contentShape(Rectangle())
         .onTapGesture { configuration.isOn.toggle() }
+        // Read as a native switch with its label, not as an anonymous button.
+        .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label }.toggleStyle(.switch) }
     }
 }

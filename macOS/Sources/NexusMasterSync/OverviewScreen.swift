@@ -34,6 +34,8 @@ struct OverviewActions {
     var openConversation: () -> Void = {}
     var openGallery: () -> Void = {}
     var copyClipboard: ((String) -> Void)?
+    /// Files dropped on the screen; nil when the phone cannot receive files.
+    var dropFiles: (([URL]) -> Bool)?
 }
 
 /// The home screen, laid out like the design: device card, quick actions, notifications, conversation, photos, clipboard.
@@ -45,6 +47,7 @@ struct OverviewScreen: View {
     @Environment(\.colorScheme) private var scheme
     @State private var width: CGFloat = 900
     @State private var copied = false
+    @State private var targetingDrop = false
 
     private var palette: NexusPalette { NexusPalette(scheme: scheme) }
     private let gap: CGFloat = 16
@@ -59,6 +62,19 @@ struct OverviewScreen: View {
         .background(GeometryReader { proxy in
             Color.clear.onChange(of: proxy.size.width, initial: true) { _, new in width = new }
         })
+        .dropDestination(for: URL.self) { urls, _ in
+            targetingDrop = false
+            return actions.dropFiles?(urls) ?? false
+        } isTargeted: { targetingDrop = $0 && actions.dropFiles != nil }
+        .overlay {
+            if targetingDrop {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(palette.accent, style: StrokeStyle(lineWidth: 2, dash: [8, 5]))
+                    .background(palette.accentSurface.opacity(0.6), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay { Label("Solte para enviar ao \(data.name)", systemImage: "arrow.up.circle").font(.headline).foregroundStyle(palette.accent) }
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     // MARK: Layouts

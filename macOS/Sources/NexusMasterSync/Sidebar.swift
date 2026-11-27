@@ -11,13 +11,20 @@ struct Sidebar: View {
 
     private var palette: NexusPalette { NexusPalette(scheme: scheme) }
 
-    private var badges: [Section: Int] { [.notifications: model.notifications.notices.count] }
+    private var badges: [Section: Int] { [.notifications: model.notifications.notices.filter { $0.peer == model.selected?.id }.count] }
 
     var body: some View {
         // The column fits when the window is tall enough; otherwise it scrolls.
-        ViewThatFits(in: .vertical) {
-            column.frame(maxHeight: .infinity, alignment: .top)
-            ScrollView { column }.scrollIndicators(.hidden)
+        VStack(spacing: 0) {
+            ViewThatFits(in: .vertical) {
+                column.frame(maxHeight: .infinity, alignment: .top)
+                ScrollView { column }.scrollIndicators(.automatic)
+            }
+            // Dispositivos and Configurações stay in view even when the rest scrolls.
+            HStack(spacing: 4) {
+                ForEach(sidebarItems(group: .footer, badges: badges)) { row($0, compact: true) }
+            }
+            .padding(.horizontal, 12).padding(.bottom, 12).padding(.top, 4)
         }
         .frame(width: 244)
         .background(palette.side)
@@ -37,13 +44,10 @@ struct Sidebar: View {
             Spacer(minLength: 8)
             pinned
             clipboardCard
-            HStack(spacing: 4) {
-                ForEach(sidebarItems(group: .footer, badges: badges)) { row($0, compact: true) }
-            }
         }
         .padding(.horizontal, 12)
         // Room for the window's own close/minimize buttons.
-        .padding(.top, 34).padding(.bottom, 12)
+        .padding(.top, 34).padding(.bottom, 8)
     }
 
     private func caption(_ text: String) -> some View {
@@ -125,7 +129,7 @@ struct Sidebar: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityLabel(item.badge.map { "\(item.section.title), \($0) pendentes" } ?? item.section.title)
+        .accessibilityLabel(soon ? "\(item.section.title), em breve" : (item.badge.map { "\(item.section.title), \($0) pendentes" } ?? item.section.title))
     }
 
     @ViewBuilder private var pinned: some View {
@@ -174,7 +178,7 @@ struct Sidebar: View {
                     Image(systemName: "document.on.clipboard").font(.system(size: 10)).foregroundStyle(palette.muted)
                 }
                 Text(latest?.text ?? "Nada copiado ainda.")
-                    .font(.system(size: 12.5)).lineLimit(3).multilineTextAlignment(.leading)
+                    .font(.system(size: 12.5)).lineLimit(2).multilineTextAlignment(.leading)
                     .foregroundStyle(latest == nil ? palette.muted : palette.ink)
                 if let latest {
                     Text(latest.date, style: .relative).font(.system(size: 11)).foregroundStyle(palette.faint)
@@ -187,5 +191,6 @@ struct Sidebar: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Área de transferência")
+        .accessibilityValue(latest?.text ?? "vazia")
     }
 }

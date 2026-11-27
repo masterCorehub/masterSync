@@ -49,6 +49,8 @@ struct MiniPlayer: View {
     let onOutput: (MediaOutput) -> Void
     let onToggleExpanded: () -> Void
     let onClose: () -> Void
+    /// The most height the player may take, so a low window never pushes its buttons off screen.
+    var maxHeight: CGFloat = .infinity
 
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -67,6 +69,7 @@ struct MiniPlayer: View {
             if expanded { full } else { mini }
         }
         .frame(width: 360)
+        .frame(maxHeight: maxHeight)
         .background { background }
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(palette.edge) }
@@ -125,6 +128,7 @@ struct MiniPlayer: View {
 
     private var full: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Recolher and Fechar stay put; only the rest scrolls when the window is short.
             HStack(spacing: 8) {
                 Label { Text("\(phoneName)").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(palette.muted) } icon: {
                     Image(systemName: "music.note").font(.system(size: 10)).foregroundStyle(palette.accent)
@@ -144,6 +148,16 @@ struct MiniPlayer: View {
                 iconButton("chevron.down", "Recolher player", size: 28, muted: true, action: onToggleExpanded)
                 iconButton("xmark", "Fechar player", size: 28, muted: true, action: onClose)
             }
+            ViewThatFits(in: .vertical) {
+                fullBody
+                ScrollView { fullBody }.scrollIndicators(.hidden)
+            }
+        }
+        .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 14)
+    }
+
+    private var fullBody: some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 14) {
                 cover(size: 96, radius: 16)
                 VStack(alignment: .leading, spacing: 4) {
@@ -159,7 +173,6 @@ struct MiniPlayer: View {
             outputPicker
             if state.hasQueue { queueSection }
         }
-        .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 14)
     }
 
     @ViewBuilder private var progress: some View {
