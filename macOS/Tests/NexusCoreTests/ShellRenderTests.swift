@@ -191,3 +191,55 @@ private struct MiniPlayerFitProbe: View {
                           onPick: { _ in }, onOutput: { _ in }, onToggleExpanded: {}, onClose: {}, maxHeight: 500)
     }
 }
+
+// MARK: Mini player height
+
+/// Records the size a view takes when offered a large area, to prove the player hugs its content.
+private final class SizeBox { var size: CGSize = .zero }
+
+private struct MeasuringLayout: Layout {
+    let box: SizeBox
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let size = subviews.first?.sizeThatFits(proposal) ?? .zero
+        box.size = size
+        return size
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: proposal)
+    }
+}
+
+@MainActor
+extension ShellRenderTests {
+    private func playerHeight(expanded: Bool, queue: Int, offered: CGFloat, maxHeight: CGFloat) -> CGFloat {
+        var message = Message("mediaStatus")
+        message.name = "Abracadabra"; message.artist = "Lady Gaga"; message.albumName = "Mayhem"
+        message.durationMs = 223_000; message.positionMs = 56_000; message.playing = true; message.canSeek = true
+        message.hasQueue = queue > 0
+        let items = (0..<queue).map { MediaQueueItem(id: Int64($0), title: "Faixa \($0)") }
+        let box = SizeBox()
+        let player = MiniPlayer(state: MediaPlayerState(message: message, receivedAt: .now), art: nil, phoneName: "Pixel", queue: items,
+                                queueActive: 0, output: .mac, connecting: false, canControl: true, canChooseOutput: true, expanded: expanded,
+                                volume: 40, onVolume: { _ in }, onCommand: { _ in }, onSeek: { _ in }, onLike: { _ in }, onOpenQueue: {},
+                                onPick: { _ in }, onOutput: { _ in }, onToggleExpanded: {}, onClose: {}, maxHeight: maxHeight)
+        let renderer = ImageRenderer(content: MeasuringLayout(box: box) { player }.frame(width: 420, height: offered, alignment: .bottomTrailing))
+        _ = renderer.nsImage
+        return box.size.height
+    }
+
+    func testCollapsedPlayerHugsItsContentInATallWindow() {
+        let height = playerHeight(expanded: false, queue: 0, offered: 900, maxHeight: 860)
+        XCTAssertLessThan(height, 110, "o player recolhido não pode esticar até a altura da janela")
+        XCTAssertGreaterThan(height, 40)
+    }
+
+    func testExpandedPlayerNeverExceedsTheAvailableHeight() {
+        for available: CGFloat in [530, 700, 860] {
+            let height = playerHeight(expanded: true, queue: 6, offered: available + 40, maxHeight: available)
+            XCTAssertLessThanOrEqual(height, available + 0.5, "available \(available)")
+        }
+        // With room to spare it takes only what it needs, not the whole window.
+        XCTAssertLessThan(playerHeight(expanded: true, queue: 0, offered: 900, maxHeight: 860), 560)
+    }
+}
+

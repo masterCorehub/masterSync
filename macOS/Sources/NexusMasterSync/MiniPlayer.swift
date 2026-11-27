@@ -69,7 +69,6 @@ struct MiniPlayer: View {
             if expanded { full } else { mini }
         }
         .frame(width: 360)
-        .frame(maxHeight: maxHeight)
         .background { background }
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(palette.edge) }
@@ -148,12 +147,25 @@ struct MiniPlayer: View {
                 iconButton("chevron.down", "Recolher player", size: 28, muted: true, action: onToggleExpanded)
                 iconButton("xmark", "Fechar player", size: 28, muted: true, action: onClose)
             }
-            ViewThatFits(in: .vertical) {
+            if estimatedBodyHeight <= bodyLimit {
                 fullBody
-                ScrollView { fullBody }.scrollIndicators(.hidden)
+            } else {
+                // Not enough room: the body scrolls inside exactly the room there is.
+                ScrollView { fullBody }.scrollIndicators(.hidden).frame(height: bodyLimit)
             }
         }
         .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 14)
+    }
+
+    /// Room for the body once the header row and the paddings are taken out of the height the window allows.
+    private var bodyLimit: CGFloat { max(120, maxHeight - 80) }
+
+    /// What the body needs: cover and title, progress, controls, sound choice, plus the volume and queue when shown.
+    private var estimatedBodyHeight: CGFloat {
+        var height: CGFloat = 400
+        if output == .mac, volume != nil { height += 34 }
+        if state.hasQueue { height += 30 + CGFloat(min(queue.count, 6)) * 44 + (queue.isEmpty ? 18 : 0) }
+        return height
     }
 
     private var fullBody: some View {
@@ -164,6 +176,7 @@ struct MiniPlayer: View {
                     Text(state.title ?? "Sem título").font(.system(size: 16, weight: .bold)).lineLimit(2)
                     if let artist = state.artist { Text(artist).font(.system(size: 12.5)).foregroundStyle(palette.muted).lineLimit(1) }
                     if let album = state.album { Text(album).font(.system(size: 12)).foregroundStyle(palette.faint).lineLimit(1) }
+                    equalizer
                 }
                 Spacer(minLength: 0)
             }
@@ -207,13 +220,40 @@ struct MiniPlayer: View {
     }
 
     private var transport: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: 14) {
             Spacer()
+            if canSkipBySeconds { iconButton("gobackward.10", "Voltar 10 segundos", size: 36) { skip(by: -10_000) } }
             iconButton("backward.end.fill", "Anterior", size: 40) { onCommand("previous") }
             playButton(size: 52)
             iconButton("forward.end.fill", "Próxima", size: 40) { onCommand("next") }
+            if canSkipBySeconds { iconButton("goforward.10", "Avançar 10 segundos", size: 36) { skip(by: 10_000) } }
             Spacer()
         }
+    }
+
+    private var canSkipBySeconds: Bool { state.canSeek && state.durationMs != nil }
+
+    /// Moves the track by [milliseconds] from where it is now, through the same seek the slider uses.
+    private func skip(by milliseconds: Int64) {
+        guard let duration = state.durationMs, duration > 0 else { return }
+        let target = min(max(state.position(at: .now) + milliseconds, 0), duration)
+        onSeek(Double(target) / Double(duration))
+    }
+
+    /// The design's five little bars: they move while the track plays and rest low when it is paused.
+    private var equalizer: some View {
+        TimelineView(.animation(minimumInterval: 0.12, paused: !playing)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .bottom, spacing: 3) {
+                ForEach(0..<5, id: \.self) { index in
+                    let wave = playing ? 0.25 + 0.75 * abs(sin(t * 3.8 + Double(index) * 1.7)) : 0.2
+                    Capsule().fill(palette.accent).frame(width: 3, height: 16 * wave)
+                }
+            }
+            .frame(height: 16, alignment: .bottom)
+        }
+        .padding(.top, 4)
+        .accessibilityHidden(true)
     }
 
     private func volumeRow(_ level: Double) -> some View {
