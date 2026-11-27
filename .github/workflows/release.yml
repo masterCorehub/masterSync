@@ -176,6 +176,8 @@ jobs:
       - name: Gerar checksums e publicar Release
         env:
           GH_TOKEN: ${{ github.token }}
+          # Este job não baixa o código; sem isso o `gh release` não sabe em qual repositório agir.
+          GH_REPO: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           INPUT_TAG: ${{ inputs.tag }}
           INPUT_PRERELEASE: ${{ inputs.prerelease }}
