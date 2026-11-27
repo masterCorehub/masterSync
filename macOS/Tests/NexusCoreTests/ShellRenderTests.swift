@@ -54,4 +54,32 @@ final class ShellRenderTests: XCTestCase {
                                name: "barra-lateral-apps", scheme: .dark, width: 244, height: 790)
         XCTAssertEqual(image.size.height, 790, accuracy: 1)
     }
+
+    // MARK: Overview
+
+    private func overviewData(connected: Bool) -> OverviewData {
+        OverviewData(
+            name: "Pixel 9 Pro", active: connected, battery: connected ? 82 : nil, charging: connected,
+            status: [("Conexão", connected ? "Rede local" : "Desconectado"), ("Notificações", "Espelhando"),
+                     ("Área de transferência", "Sincronizando"), ("Arquivos", "Aceitando")],
+            notices: [], conversation: connected ? [
+                OverviewConversationRow(id: "1", title: "Você", preview: "Manda aquela foto do quadro?", date: .now, outgoing: true),
+                OverviewConversationRow(id: "2", title: "Pixel 9 Pro", preview: "Proposta_final.pdf", date: .now, outgoing: false)] : [],
+            photos: [], clipboardText: connected ? "Reunião remarcada para 16h — sala 3B, link no convite." : nil, clipboardDate: .now)
+    }
+
+    func testOverviewRendersConnectedAndDisconnected() throws {
+        for scheme in [ColorScheme.dark, .light] {
+            for connected in [true, false] {
+                let view = OverviewScreen(data: overviewData(connected: connected), actions: OverviewActions(), extras: AnyView(EmptyView()))
+                let image = try render(view, name: "visao-geral-\(connected ? "conectado" : "desconectado")", scheme: scheme, width: 944, height: 700)
+                XCTAssertEqual(image.size.width, 944, accuracy: 1)
+            }
+        }
+    }
+
+    func testOverviewRendersInANarrowWindow() throws {
+        _ = try render(OverviewScreen(data: overviewData(connected: true), actions: OverviewActions(), extras: AnyView(EmptyView())),
+                       name: "visao-geral-estreita", scheme: .dark, width: 484, height: 900)
+    }
 }

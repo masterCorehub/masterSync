@@ -210,62 +210,53 @@ struct Dashboard: View {
     }
 
     private func overview(size: CGSize) -> some View {
-        let columnWidth = min(max(size.width * 0.37, 250), 545)
-        // Preserve the handset proportions while using the available viewport height.
-        let phoneHeight = min(max(size.height - 130, 380), (columnWidth - 36) * 1.98, 800)
-        return HStack(alignment: .top, spacing: 30) {
-            phonePanel(height: phoneHeight)
-                .frame(width: columnWidth)
-                .padding(.vertical, 20)
-                .nexusPanel(palette, radius: 22)
-            VStack(alignment: .leading, spacing: 24) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(model.selected?.name ?? "Seu Android").font(.title2.weight(.semibold))
-                        Label(model.active ? "Conectado" : "Desconectado",
-                              systemImage: model.active ? "wifi" : "wifi.slash")
-                            .font(.caption).foregroundStyle(model.active ? palette.connected : palette.muted)
-                    }
-                    Spacer()
-                    if let battery = model.selectedStatus?.battery {
-                        Label("\(battery)%", systemImage: "battery.50percent")
-                    }
-                }
-                if !model.active {
-                    Button("Conectar Android") { connectionGuide = true }
-                        .buttonStyle(NexusPillStyle(prominent: true, compact: true))
-                }
-                Button { model.requestInstantPhoto() } label: {
-                    Label(model.cameraPending ? "Aguardando foto…" : "Tirar foto com o Android", systemImage: "camera")
-                }
-                .buttonStyle(NexusPillStyle(compact: true))
-                .disabled(!model.canRequestPhoto || model.cameraPending)
-                .help("Ative Arquivos e autorize solicitações de câmera no MasterSync do Android.")
-                if let feedback = model.cameraFeedback, !feedback.isEmpty { empty(feedback) }
-                if let peer = model.selected?.id, model.active, let alert = model.batteryMessages[peer] {
-                    Label(alert, systemImage: "battery.25percent")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(palette.accent)
-                }
-                androidLauncher
-                audioPanel
-                compactNotifications
-                Toggle("Área de transferência", isOn: Binding(
-                    get: { model.clipboardEnabled || model.adbClipboard.transport != nil },
-                    set: {
-                        model.clipboardEnabled = $0
-                        if !$0 {
-                            model.adbClipboard.stop()
-                        } else if let device = model.adbClipboard.wirelessDevice {
-                            model.adbClipboard.startWiFi(device: device)
-                        }
-                    }
-                ))
+        let phone = model.selected?.name ?? "Seu Android"
+        let entries = conversationEntries.suffix(3)
+        let rows = entries.map { entry -> OverviewConversationRow in
+            switch entry {
+            case .text(let message):
+                OverviewConversationRow(id: entry.id, title: message.outgoing ? "Você" : phone,
+                                        preview: Wire.visible(message.text, limit: 120), date: message.date, outgoing: message.outgoing)
+            case .file(let item, let outgoing):
+                OverviewConversationRow(id: entry.id, title: outgoing ? "Você" : phone,
+                                        preview: item.offer.name, date: item.date, outgoing: outgoing)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity)
+        let latestClip = model.clipboard.items.first
+        let data = OverviewData(
+            name: phone, active: model.active, battery: model.selectedStatus?.battery, charging: model.selectedStatus?.charging == true,
+            status: [("Conexão", model.active ? "Rede local" : "Desconectado"),
+                     ("Notificações", model.notificationsEnabled ? "Espelhando" : "Desligadas"),
+                     ("Área de transferência", model.clipboardEnabled ? "Sincronizando" : "Pausada"),
+                     ("Arquivos", model.filesEnabled ? "Aceitando" : "Bloqueados")],
+            notices: model.notifications.notices, conversation: Array(rows), photos: Array(mediaFiles.prefix(7)),
+            clipboardText: latestClip?.text, clipboardDate: latestClip?.date)
+        var actions = OverviewActions()
+        actions.control = { model.section = .remote }
+        actions.sendFile = model.canSendFiles ? { imported = true } : nil
+        actions.photo = model.canRequestPhoto && !model.cameraPending ? { model.requestInstantPhoto() } : nil
+        actions.find = model.canFindPhone ? { model.findPhone() } : nil
+        actions.openNotifications = { model.section = .notifications }
+        actions.openConversation = { model.section = .conversation }
+        actions.openGallery = { model.section = .gallery }
+        actions.copyClipboard = { model.clipboard.apply($0) }
+        let extras = AnyView(VStack(alignment: .leading, spacing: 12) {
+            if !model.active {
+                Button("Conectar Android") { connectionGuide = true }
+                    .buttonStyle(NexusPillStyle(prominent: true, compact: true))
+            }
+            if let peer = model.selected?.id, model.active, let alert = model.batteryMessages[peer] {
+                Label(alert, systemImage: "battery.25percent")
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(palette.accent)
+            }
+            if let feedback = model.cameraFeedback, !feedback.isEmpty { empty(feedback) }
+            if let feedback = model.actionFeedback { empty(feedback) }
+            HStack(spacing: 12) {
+                androidDndToggle
+                Spacer()
+            }
+        })
+        return OverviewScreen(data: data, actions: actions, extras: extras)
     }
 
     private var launcherPins: [String: [String]] {
