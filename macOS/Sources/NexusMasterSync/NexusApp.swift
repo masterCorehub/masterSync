@@ -71,8 +71,10 @@ struct NexusApp: App {
             })
             .preferredColorScheme(preferredScheme)
         } label: {
-            if let battery = model.selectedStatus?.battery {
-                Label("\(battery)%", systemImage: model.selectedStatus?.charging == true ? "battery.100percent.bolt" : "battery.75percent")
+            let unread = MenuBarSummary.unread(notices: model.notifications.notices.filter { $0.peer == model.selected?.id }.count,
+                                               sms: model.smsAvailable ? model.sms.unreadTotal : 0)
+            if let text = MenuBarSummary.labelText(battery: model.selectedStatus?.battery, unread: unread) {
+                Label(text, systemImage: model.selectedStatus?.charging == true ? "battery.100percent.bolt" : "battery.75percent")
             } else {
                 Label("Nexus masterSync", systemImage: "arrow.left.arrow.right")
             }

@@ -1,6 +1,27 @@
 import NexusCore
 import SwiftUI
 
+/// Pure rules for what the menu bar icon and panel show.
+enum MenuBarSummary {
+    static func unread(notices: Int, sms: Int) -> Int { max(0, notices) + max(0, sms) }
+
+    /// "82% · 3", "82%", "3", or nil when there is nothing to show.
+    static func labelText(battery: Int?, unread: Int) -> String? {
+        let count = unread > 99 ? "99+" : unread > 0 ? "\(unread)" : nil
+        switch (battery, count) {
+        case let (b?, c?): return "\(b)% · \(c)"
+        case let (b?, nil): return "\(b)%"
+        case let (nil, c?): return c
+        default: return nil
+        }
+    }
+
+    /// Newest first, at most `limit`.
+    static func preview(_ items: [(id: String, date: Date)], limit: Int) -> [(id: String, date: Date)] {
+        Array(items.sorted { $0.date > $1.date }.prefix(limit))
+    }
+}
+
 /// What the menu bar icon opens: the phone, quick switches, pinned apps, what was copied, and the common actions.
 struct MenuBarPanel: View {
     @ObservedObject var model: NexusModel
@@ -9,6 +30,7 @@ struct MenuBarPanel: View {
     let quit: () -> Void
     @AppStorage("android-launcher-pins") private var storedPins = Data()
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.openWindow) private var openWindow
 
     private var palette: NexusPalette { NexusPalette(scheme: scheme) }
 
@@ -21,12 +43,14 @@ struct MenuBarPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             phone
+            controls
             tiles
+            notices
             apps
             clipboard
             if model.screen.inAppControl || model.screen.sharing || model.screen.usbActive { sessions }
             HStack(spacing: 8) {
-                button("Enviar arquivo…", prominent: false) { open(.files) }
+                button("Enviar arquivo…", prominent: false) { sendFile() }
                 button("Abrir MasterSync", prominent: true) { open(.overview) }
             }
             Button("Encerrar Nexus masterSync", action: quit)
@@ -65,13 +89,105 @@ struct MenuBarPanel: View {
             tile("bell", "Notificações", model.notificationsEnabled ? "Espelhando" : "Desligadas", on: model.notificationsEnabled) {
                 model.notificationsEnabled.toggle()
             }
-            tile("cast", "Espelhar", model.screen.sharing ? "Ao vivo" : "Pronto", on: model.screen.sharing, enabled: model.screen.sharing || model.canMirror) {
-                if model.screen.sharing { model.screen.end() } else { model.requestMirror() }
+            tile("cast", "Espelhar", model.screen.sharing ? "Ao vivo" : "Abre a janela", on: model.screen.sharing, enabled: model.screen.sharing || model.canMirror) {
+                if model.screen.sharing { model.screen.end() } else {
+                    model.requestMirror()
+                    openWindow(id: "mirror")
+                    NSApp.activate(ignoringOtherApps: true)
+                }
             }
+            tile("speaker.wave.2", "Ouvir som", model.screen.audioOnlyActive ? "Tocando no Mac" : "Do celular no Mac", on: model.screen.audioOnlyActive,
+                 enabled: model.active) { toggleAudio() }
             tile("cursorarrow.rays", "Controlar", (model.screen.inAppControl || model.screen.usbActive) ? "Em andamento" : "Abrir", on: model.screen.inAppControl) {
                 open(.remote)
             }
+            tile("document.viewfinder", "Digitalizar", "Câmera do celular", on: false, enabled: model.active) { model.requestScan() }
         }
+    }
+
+    private var controls: some View {
+        let items = QuickControls.items(model.quickControlInputs)
+        return HStack(spacing: 0) {
+            ForEach(items) { item in
+                Button { model.pressQuickControl(item.kind) } label: {
+                    Image(systemName: item.icon).font(.system(size: 14))
+                        .foregroundStyle(item.isOn ? palette.accentInk : palette.ink)
+                        .frame(width: 38, height: 38)
+                        .background(item.isOn ? palette.fill : palette.panel2, in: Circle())
+                        .overlay { Circle().strokeBorder(palette.line) }
+                        .opacity(item.isEnabled ? 1 : 0.45)
+                }
+                .buttonStyle(.plain).frame(maxWidth: .infinity)
+                .help(item.accessibilityLabel).accessibilityLabel(item.accessibilityLabel)
+            }
+        }
+    }
+
+    private var peerNotices: [NotificationSync.Notice] {
+        model.notifications.notices.filter { $0.peer == model.selected?.id }
+    }
+
+    private var notices: some View {
+        let byID = Dictionary(peerNotices.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let shown = MenuBarSummary.preview(peerNotices.map { (id: $0.id, date: $0.date) }, limit: 4).compactMap { byID[$0.id] }
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("NOTIFICAÇÕES").font(.system(size: 10.5, weight: .semibold)).tracking(0.7).foregroundStyle(palette.muted)
+                Spacer()
+                if model.smsAvailable, model.sms.unreadTotal > 0 {
+                    Button("\(model.sms.unreadTotal) SMS não lidos") { open(.sms) }
+                        .buttonStyle(.plain).font(.system(size: 11.5)).foregroundStyle(palette.accent)
+                }
+                Button("Todas") { open(.notifications) }.buttonStyle(.plain).font(.system(size: 11.5)).foregroundStyle(palette.accent)
+            }
+            if shown.isEmpty {
+                Text(model.notificationsEnabled ? "Nenhuma notificação agora." : "Ligue as notificações para vê-las aqui.")
+                    .font(.system(size: 11.5)).foregroundStyle(palette.muted)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(shown) { notice in
+                        HStack(alignment: .top, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(notice.title.isEmpty ? notice.app : "\(notice.app) · \(notice.title)")
+                                    .font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                                if !notice.body.isEmpty {
+                                    Text(notice.body).font(.system(size: 11.5)).foregroundStyle(palette.muted).lineLimit(2)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                            Text(notice.date, style: .relative).font(.system(size: 10)).foregroundStyle(palette.faint).lineLimit(1)
+                            if notice.canDismiss {
+                                Button { model.notifications.dismiss(notice) } label: { Image(systemName: "xmark") }
+                                    .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(palette.muted)
+                                    .accessibilityLabel("Dispensar")
+                            }
+                        }
+                        .padding(.vertical, 6)
+                        if notice.id != shown.last?.id { Divider().overlay(palette.line) }
+                    }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 4).frame(maxWidth: .infinity, alignment: .leading)
+                .glassPanel(radius: 14)
+            }
+        }
+    }
+
+    private func toggleAudio() {
+        if model.screen.audioOnlyActive {
+            model.screen.stopUSB()
+        } else if let device = model.wirelessControlDevice(for: model.selected?.id) {
+            model.screen.launchScrcpy(audioOnly: true, wireless: device)
+        } else {
+            open(.devices)
+        }
+    }
+
+    private func sendFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = true
+        NSApp.activate(ignoringOtherApps: true)
+        if panel.runModal() == .OK { _ = model.sendItems(panel.urls) }
     }
 
     private func tile(_ icon: String, _ title: String, _ state: String, on: Bool, enabled: Bool = true,
