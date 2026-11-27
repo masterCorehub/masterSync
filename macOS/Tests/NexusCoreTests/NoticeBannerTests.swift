@@ -59,6 +59,33 @@ final class NoticeBannerTests: XCTestCase {
         XCTAssertEqual(shown, 0)
     }
 
+    func testACardBeingRepliedToDoesNotExpire() {
+        var queue = NoticeBannerQueue(limit: 3)
+        queue.add("a"); queue.add("b")
+        queue.beginReply("a")
+        XCTAssertFalse(queue.shouldExpire("a"))
+        XCTAssertTrue(queue.shouldExpire("b"))
+        queue.endReply()
+        XCTAssertTrue(queue.shouldExpire("a"))
+    }
+
+    func testRemovingTheCardEndsItsReply() {
+        var queue = NoticeBannerQueue(limit: 3)
+        queue.add("a")
+        queue.beginReply("a")
+        queue.remove("a")
+        XCTAssertNil(queue.replyingID)
+    }
+
+    func testReplyDraftNeedsTextAndFitsTheLimit() {
+        XCTAssertFalse(NoticeReplyDraft.canSend(""))
+        XCTAssertFalse(NoticeReplyDraft.canSend("   \n "))
+        XCTAssertTrue(NoticeReplyDraft.canSend("Já chego"))
+        XCTAssertTrue(NoticeReplyDraft.canSend(String(repeating: "a", count: 1024)))
+        XCTAssertFalse(NoticeReplyDraft.canSend(String(repeating: "a", count: 1025)))
+        XCTAssertFalse(NoticeReplyDraft.canSend(String(repeating: "é", count: 600)))
+    }
+
     private func message(_ id: String) -> Message {
         var message = Message("notice")
         message.id = id; message.app = "App"; message.group = "test.app"; message.at = 10

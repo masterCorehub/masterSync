@@ -126,7 +126,8 @@ final class NexusModel: ObservableObject {
     @Published var noticeStyle = NoticeStyle(stored: UserDefaults.standard.string(forKey: "notice-style")) {
         didSet { UserDefaults.standard.set(noticeStyle.rawValue, forKey: "notice-style"); updateNotifications() }
     }
-    private lazy var noticeBanner = NoticeBannerController(open: { [weak self] in self?.section = .notifications })
+    private lazy var noticeBanner = NoticeBannerController(open: { [weak self] in self?.section = .notifications },
+                                                              reply: { [weak self] in self?.notifications.reply(to: $0, text: $1) })
     @Published var blockedApps: Set<String> {
         didSet { preferences.set(Array(blockedApps), forKey: "blocked-apps"); updateNotifications(); notifications.removeAll(); refreshNotices() }
     }
