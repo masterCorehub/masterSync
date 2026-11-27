@@ -103,7 +103,7 @@ struct FilesScreen: View {
         HStack(spacing: 12) {
             HStack(spacing: 2) {
                 tabButton("Transferências", icon: "arrow.up.arrow.down", .transfers)
-                tabButton("Arquivos do Pixel", icon: "folder", .pixel)
+                tabButton("Armazenamento interno", icon: "internaldrive", .pixel)
             }
             .padding(4)
             .background(palette.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -133,7 +133,7 @@ struct FilesScreen: View {
     private var tabsOnly: some View {
         HStack(spacing: 2) {
                 tabButton("Transferências", icon: "arrow.up.arrow.down", .transfers)
-                tabButton("Arquivos do Pixel", icon: "folder", .pixel)
+                tabButton("Armazenamento interno", icon: "internaldrive", .pixel)
             }
             .padding(4)
             .background(palette.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))

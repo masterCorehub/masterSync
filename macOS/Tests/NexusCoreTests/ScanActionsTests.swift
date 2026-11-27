@@ -1,4 +1,5 @@
 import AppKit
+import NexusCore
 @testable import NexusMasterSync
 import XCTest
 
@@ -79,4 +80,28 @@ final class ScanActionsTests: XCTestCase {
         // After "c" is deleted the list is ["b", "a"]; both were seen, so nothing opens.
         XCTAssertNil(ScanActions.newPage(known: ["a", "b", "c"], current: ["b", "a"]))
     }
+
+    // MARK: Scans stay out of the conversation
+
+    private func received(name: String, scan: Bool, mime: String = "image/jpeg") throws -> ReceivedFile {
+        let flag = scan ? #","scanPage":true"# : ""
+        let json = #"{"id":"\#(UUID().uuidString.lowercased())","name":"\#(name)","mime":"\#(mime)","size":10,"hash":"x"\#(flag)}"#
+        return ReceivedFile(peerID: "p", offer: try JSONDecoder().decode(FileOffer.self, from: Data(json.utf8)),
+                            url: URL(fileURLWithPath: "/tmp/\(name)"), date: .now)
+    }
+
+    func testAScanFromThePhoneDoesNotAppearInTheConversation() throws {
+        XCTAssertFalse(ScanActions.belongsInConversation(try received(name: "Digitalização 1.jpg", scan: true)))
+    }
+
+    func testOrdinaryFilesAndPhotosStayInTheConversation() throws {
+        XCTAssertTrue(ScanActions.belongsInConversation(try received(name: "foto.jpg", scan: false)))
+        XCTAssertTrue(ScanActions.belongsInConversation(try received(name: "contrato.pdf", scan: false, mime: "application/pdf")))
+    }
+
+    func testAPageSentBackFromTheMacIsAnOrdinaryFile() throws {
+        // Sent files are built from a file on the Mac, with no scan flag: this is what "Enviar na conversa" produces.
+        XCTAssertTrue(ScanActions.belongsInConversation(try received(name: "Digitalização 1.jpg", scan: false)))
+    }
 }
+

@@ -543,7 +543,7 @@ struct Dashboard: View {
     private var conversationEntries: [ConversationEntry] {
         guard let peer = model.selected?.id else { return [] }
         let texts = model.messages.filter { $0.peer == peer }.map(ConversationEntry.text)
-        let incoming = model.files.received.filter { $0.peerID == peer }.map { ConversationEntry.file($0, outgoing: false) }
+        let incoming = model.files.received.filter { $0.peerID == peer && ScanActions.belongsInConversation($0) }.map { ConversationEntry.file($0, outgoing: false) }
         let outgoing = model.files.sent.filter { $0.peerID == peer }.map { ConversationEntry.file($0, outgoing: true) }
         return Array((texts + incoming + outgoing).sorted { $0.date < $1.date }.suffix(60))
     }

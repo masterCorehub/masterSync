@@ -18,6 +18,10 @@ enum ScanActions {
         return candidate
     }
 
+    /// Pages scanned on the phone are not chat messages: they open their own modal. Only a page the person sends
+    /// back from the Mac (an ordinary file, with no scan flag) appears in the conversation.
+    static func belongsInConversation(_ file: ReceivedFile) -> Bool { !file.offer.isScanPage }
+
     /// The newest page that has not been seen yet (pages are listed newest first), or nil when nothing new arrived.
     static func newPage(known: Set<String>, current: [String]) -> String? { current.first { !known.contains($0) } }
 
