@@ -72,7 +72,7 @@ class RemoteGallery(
         val id = if (date == since) Long.MAX_VALUE else syncState.getLong("$peer-id", 0)
         runCatching {
             query("${GalleryQuery.MEDIA_ONLY} AND (date_added > ? OR (date_added = ? AND _id > ?))",
-                arrayOf(date.toString(), date.toString(), id.toString()), 0, 20, ascending = true) { cursor ->
+                arrayOf(date.toString(), date.toString(), id.toString()), 0, 20, sortOrder = "date_added ASC, _id ASC") { cursor ->
                 while (cursor.moveToNext() && approved(peer) && automatic == (peer to since)) {
                     val item = entry(cursor)
                     val media = item.getLong("id")
@@ -136,7 +136,7 @@ class RemoteGallery(
         val filter = GalleryQuery.from(message)
         val media = JSONArray()
         val reply = Wire.message("galleryPage").put("offset", filter.offset)
-        query(filter.selection, filter.values, filter.offset, 25, filter.ascending, filter.sortColumns) { cursor ->
+        query(filter.selection, filter.values, filter.offset, 25, filter.sortOrder) { cursor ->
             while (media.length() < 24 && cursor.moveToNext()) media.put(entry(cursor))
             reply.put("more", cursor.moveToNext())
         }
@@ -205,14 +205,13 @@ class RemoteGallery(
     }
 
     private fun query(selection: String, values: Array<String>, offset: Int, limit: Int,
-                      ascending: Boolean = false, sortColumns: Array<String> = arrayOf("date_added", "_id"),
+                      sortOrder: String = "date_added DESC, _id DESC",
                       read: (android.database.Cursor) -> Unit) {
         val args = Bundle().apply {
             putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
             putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, values)
-            putStringArray(ContentResolver.QUERY_ARG_SORT_COLUMNS, sortColumns)
-            putInt(ContentResolver.QUERY_ARG_SORT_DIRECTION, if (ascending) ContentResolver.QUERY_SORT_DIRECTION_ASCENDING
-                else ContentResolver.QUERY_SORT_DIRECTION_DESCENDING)
+            // One direction per column: QUERY_ARG_SORT_DIRECTION would apply only to the last column and leave the dates ascending.
+            putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, sortOrder)
             putInt(ContentResolver.QUERY_ARG_OFFSET, offset)
             putInt(ContentResolver.QUERY_ARG_LIMIT, limit)
         }

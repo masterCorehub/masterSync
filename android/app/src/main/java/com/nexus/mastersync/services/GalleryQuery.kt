@@ -5,8 +5,8 @@ import org.json.JSONObject
 internal data class GalleryQuery(
     val selection: String,
     val values: Array<String>,
-    val sortColumns: Array<String>,
-    val ascending: Boolean,
+    /** A complete SQL ORDER BY, each column with its own direction (never built from the message's text). */
+    val sortOrder: String,
     val offset: Int
 ) {
     companion object {
@@ -45,8 +45,11 @@ internal data class GalleryQuery(
             return GalleryQuery(
                 conditions.joinToString(" AND "),
                 values.toTypedArray(),
-                if (order == "name") arrayOf("_display_name", "_id") else arrayOf("date_added", "_id"),
-                order == "name" || order == "oldest",
+                when (order) {
+                    "name" -> "_display_name ASC, _id ASC"
+                    "oldest" -> "date_added ASC, _id ASC"
+                    else -> "date_added DESC, _id DESC"
+                },
                 message.optInt("offset", 0).coerceIn(0, 200_000)
             )
         }

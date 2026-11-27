@@ -19,16 +19,32 @@ class GalleryAndClipboardTest {
         assertTrue(query.selection.contains("media_type = 3"))
         assertTrue(query.selection.contains("date_added >= ? AND date_added < ?"))
         assertArrayEquals(arrayOf("123", "%100\\%\\_capa%", "1700000000", "1700086400"), query.values)
-        assertArrayEquals(arrayOf("_display_name", "_id"), query.sortColumns)
-        assertTrue(query.ascending)
+        assertEquals("_display_name ASC, _id ASC", query.sortOrder)
         assertEquals(24, query.offset)
     }
 
     @Test fun unsupportedSortFallsBackToDate() {
         val query = GalleryQuery.from(Wire.message("galleryList").put("order", "random()").put("offset", -4))
-        assertArrayEquals(arrayOf("date_added", "_id"), query.sortColumns)
-        assertFalse(query.ascending)
+        assertEquals("date_added DESC, _id DESC", query.sortOrder)
         assertEquals(0, query.offset)
+    }
+
+    /**
+     * ContentResolver.QUERY_ARG_SORT_DIRECTION applies to the last sort column only ("date_added, _id DESC"), which left the
+     * dates in ascending order and sent the OLDEST photos first. Each column must carry its own direction.
+     */
+    @Test fun everySortColumnCarriesItsOwnDirection() {
+        fun order(value: String?) = GalleryQuery.from(Wire.message("galleryList").also { if (value != null) it.put("order", value) }).sortOrder
+        assertEquals("date_added DESC, _id DESC", order(null))
+        assertEquals("date_added DESC, _id DESC", order("newest"))
+        assertEquals("date_added ASC, _id ASC", order("oldest"))
+        assertEquals("_display_name ASC, _id ASC", order("name"))
+        assertEquals("date_added DESC, _id DESC", order("DROP TABLE"))
+    }
+
+    @Test fun theSortOrderIsNeverBuiltFromTheMessageText() {
+        val hostile = GalleryQuery.from(Wire.message("galleryList").put("order", "date_added; DELETE FROM files"))
+        assertEquals("date_added DESC, _id DESC", hostile.sortOrder)
     }
 
     @Test fun clipboardReassemblesMultipleBlocksAndRejectsCorruption() {
