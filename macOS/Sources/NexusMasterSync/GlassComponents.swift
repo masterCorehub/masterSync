@@ -142,3 +142,32 @@ struct StatusDot: View {
             .accessibilityHidden(true)
     }
 }
+
+/// A settings row: title and optional subtitle at the left, a switch at the right, hairline below.
+struct SwitchRow: View {
+    let title: String
+    var subtitle: String?
+    @Binding var isOn: Bool
+    var showsDivider = true
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let palette = NexusPalette(scheme: scheme)
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: 13, weight: .semibold))
+                    if let subtitle { Text(subtitle).font(.system(size: 11.5)).foregroundStyle(palette.muted) }
+                }
+                Spacer(minLength: 8)
+                GlassToggle(isOn: $isOn)
+            }
+            .padding(.vertical, 12)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(title)
+            .accessibilityValue(isOn ? "Ligado" : "Desligado")
+            .accessibilityAction { isOn.toggle() }
+            if showsDivider { Rectangle().fill(palette.line).frame(height: 1) }
+        }
+    }
+}

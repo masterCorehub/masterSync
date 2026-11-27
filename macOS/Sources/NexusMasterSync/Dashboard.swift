@@ -846,9 +846,11 @@ struct Dashboard: View {
         return Button {
             if notice.canDismiss { model.notifications.dismiss(notice) } else { model.notifications.hide(notice) }
         } label: {
-            Image(systemName: notice.canDismiss ? "xmark.circle" : "eye.slash")
+            Image(systemName: notice.canDismiss ? "xmark" : "eye.slash")
+                .font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.faint)
+                .frame(width: 28, height: 28).contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .help(label)
         .accessibilityLabel(notice.canDismiss ? "Dispensar no Android" : "Ocultar no Mac")
     }
@@ -1097,56 +1099,96 @@ struct Dashboard: View {
 
     private var notifications: some View {
         let notices = model.notifications.notices.filter { $0.peer == model.selected?.id }
-        return VStack(alignment: .leading, spacing: 14) {
-            card("Espelhamento de notificações", icon: "bell") {
-                Toggle("Receber notificações do Android", isOn: $model.notificationsEnabled)
-                Toggle("Ocultar conteúdo neste Mac", isOn: $model.hideNotices)
-                androidDndToggle
-                notificationFeedback
-                Toggle("Silenciar avisos no Mac", isOn: $model.quiet)
-                Button("Autorizar Central de Notificações") { model.notifications.askPermission() }
-                if let status = model.notifications.authorization { empty(status) }
-            }
-            if !model.notifications.apps.isEmpty {
-                card("Aplicativos", icon: "square.grid.2x2") {
-                    ForEach(model.notifications.apps.keys.sorted(), id: \.self) { key in
-                        Toggle(model.notifications.apps[key] ?? key, isOn: Binding(
-                            get: { !model.blockedApps.contains(key) },
-                            set: { if $0 { model.blockedApps.remove(key) } else { model.blockedApps.insert(key) } }))
+        return HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    clearAllNoticesButton
+                    if model.canRefreshNotices && model.notificationsEnabled {
+                        Button { model.refreshNotices() } label: { Label("Atualizar", systemImage: "arrow.clockwise") }
+                            .buttonStyle(NexusPillStyle(compact: true))
                     }
+                    Spacer()
                 }
-            }
-            card("Ativas no Android", icon: "tray") {
-                clearAllNoticesButton
-                if model.canRefreshNotices && model.notificationsEnabled {
-                    Button("Atualizar") { model.refreshNotices() }
-                        .buttonStyle(NexusPillStyle(compact: true))
-                }
+                notificationFeedback
                 if notices.isEmpty {
-                    empty(model.active ? "Nenhuma notificação ativa." : "Conecte o Android para ver as notificações.")
+                    Text(model.active ? "Tudo em dia." : "Conecte o Android para ver as notificações.")
+                        .font(.system(size: 13)).foregroundStyle(palette.muted)
+                        .frame(maxWidth: .infinity).padding(40)
                 }
                 ForEach(notices) { notice in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Label {
-                                Text(notice.app)
-                            } icon: {
-                                if let icon = notice.icon { Image(nsImage: icon).resizable().frame(width: 14, height: 14) }
-                                else { Image(systemName: "app") }
-                            }.font(.caption).foregroundStyle(palette.muted)
-                            Text(notice.title).fontWeight(.medium)
-                            if !notice.body.isEmpty { Text(notice.body).foregroundStyle(palette.muted) }
+                    HStack(alignment: .top, spacing: 12) {
+                        Group {
+                            if let icon = notice.icon {
+                                Image(nsImage: icon).resizable().scaledToFit().padding(4)
+                            } else {
+                                Text(String(notice.app.prefix(1)).uppercased()).font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                            }
                         }
-                        Spacer()
-                        Text(notice.date, style: .time).font(.caption).foregroundStyle(palette.muted)
-                        if notice.canReply {
-                            Button("Responder") { replyText = ""; replyNotice = notice }
+                        .frame(width: 38, height: 38)
+                        .background(notice.icon == nil ? NexusPalette.hueColor(hue(for: notice.app)) : palette.panel2,
+                                    in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text(notice.app).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(palette.muted)
+                                Spacer()
+                                Text(notice.date, style: .time).font(.system(size: 11)).foregroundStyle(palette.faint)
+                            }
+                            Text(notice.title).font(.system(size: 13.5, weight: .semibold))
+                            if !notice.body.isEmpty {
+                                Text(notice.body).font(.system(size: 13)).foregroundStyle(palette.muted).lineSpacing(2)
+                            }
+                            if notice.canReply {
+                                Button("Responder") { replyText = ""; replyNotice = notice }
+                                    .buttonStyle(NexusPillStyle(compact: true)).padding(.top, 4)
+                            }
                         }
                         dismissNoticeButton(notice)
                     }
-                    Divider()
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .glassPanel(radius: 18)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 0) {
+                    SwitchRow(title: "Receber do Android", subtitle: "Espelha as notificações neste Mac", isOn: $model.notificationsEnabled)
+                    SwitchRow(title: "Ocultar conteúdo", subtitle: "Mostra só o nome do app", isOn: $model.hideNotices)
+                    SwitchRow(title: "Não Perturbe no Android", subtitle: "Silencia o celular", isOn: Binding(
+                        get: { model.androidDnd?.dndEnabled == true }, set: { model.setAndroidDnd($0) }))
+                        .disabled(!model.active || model.androidDnd?.dndAllowed != true)
+                    SwitchRow(title: "Silenciar avisos no Mac", isOn: $model.quiet, showsDivider: false)
+                    Button("Autorizar Central de Notificações") { model.notifications.askPermission() }
+                        .buttonStyle(NexusPillStyle(compact: true)).padding(.vertical, 10)
+                    if let status = model.notifications.authorization { empty(status).font(.system(size: 11.5)) }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 6)
+                .glassPanel(radius: 20)
+                if !model.notifications.apps.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Espelhar notificações de").font(.system(size: 13, weight: .bold)).padding(.bottom, 8)
+                        ForEach(model.notifications.apps.keys.sorted(), id: \.self) { key in
+                            let name = model.notifications.apps[key] ?? key
+                            HStack(spacing: 10) {
+                                Text(String(name.prefix(1)).uppercased())
+                                    .font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                                    .frame(width: 26, height: 26)
+                                    .background(NexusPalette.hueColor(hue(for: key)), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                Text(name).font(.system(size: 13)).lineLimit(1)
+                                Spacer()
+                                GlassToggle(isOn: Binding(
+                                    get: { !model.blockedApps.contains(key) },
+                                    set: { if $0 { model.blockedApps.remove(key) } else { model.blockedApps.insert(key) } }))
+                            }
+                            .padding(.vertical, 8)
+                            .overlay(alignment: .top) { Rectangle().fill(palette.line).frame(height: 1) }
+                        }
+                    }
+                    .padding(16)
+                    .glassPanel(radius: 20)
+                }
+            }
+            .frame(width: 300)
         }
     }
 
