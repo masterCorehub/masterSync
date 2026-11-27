@@ -62,10 +62,7 @@ struct OverviewScreen: View {
         .background(GeometryReader { proxy in
             Color.clear.onChange(of: proxy.size.width, initial: true) { _, new in width = new }
         })
-        .dropDestination(for: URL.self) { urls, _ in
-            targetingDrop = false
-            return actions.dropFiles?(urls) ?? false
-        } isTargeted: { targetingDrop = $0 && actions.dropFiles != nil }
+        .modifier(FileDropModifier(accept: actions.dropFiles, targeting: $targetingDrop))
         .overlay {
             if targetingDrop {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -82,6 +79,7 @@ struct OverviewScreen: View {
     private var wideLayout: some View {
         let column = (width - 290 - gap * 2) / 2
         return VStack(alignment: .leading, spacing: gap) {
+            // Each row takes the height of its tallest card and the others stretch to it, as the design's grid does.
             HStack(alignment: .top, spacing: gap) {
                 deviceCard.frame(width: 290)
                 VStack(alignment: .leading, spacing: gap) {
@@ -92,10 +90,12 @@ struct OverviewScreen: View {
                     }
                 }
             }
+            .fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .top, spacing: gap) {
                 photosCard.frame(width: 290 + gap + column)
                 clipboardCard.frame(width: column)
             }
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -171,6 +171,7 @@ struct OverviewScreen: View {
             }
         }
         .padding(18)
+        .frame(maxHeight: .infinity, alignment: .top)
         .glassPanel(radius: 20)
     }
 
@@ -235,7 +236,7 @@ struct OverviewScreen: View {
             }
         }
         .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .glassPanel(radius: 20)
     }
 
@@ -264,7 +265,7 @@ struct OverviewScreen: View {
             }
         }
         .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .glassPanel(radius: 20)
     }
 
@@ -281,7 +282,7 @@ struct OverviewScreen: View {
             }
         }
         .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .glassPanel(radius: 20)
     }
 
@@ -315,7 +316,7 @@ struct OverviewScreen: View {
             }
         }
         .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .glassPanel(radius: 20)
     }
 }
@@ -344,5 +345,23 @@ private struct RecentPhotoTile: View {
                 let result = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)
                 if !Task.isCancelled { thumbnail = result?.nsImage }
             }
+    }
+}
+
+/// Lets files be dropped on the screen. Skipped in snapshot tests, where ImageRenderer cannot draw the drop target.
+private struct FileDropModifier: ViewModifier {
+    let accept: (([URL]) -> Bool)?
+    @Binding var targeting: Bool
+    @Environment(\.nexusFlatBackdrop) private var snapshot
+
+    func body(content: Content) -> some View {
+        if snapshot {
+            content
+        } else {
+            content.dropDestination(for: URL.self) { urls, _ in
+                targeting = false
+                return accept?(urls) ?? false
+            } isTargeted: { targeting = $0 && accept != nil }
+        }
     }
 }
