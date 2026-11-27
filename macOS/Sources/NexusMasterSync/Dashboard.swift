@@ -1065,6 +1065,20 @@ struct Dashboard: View {
                         get: { model.androidDnd?.dndEnabled == true }, set: { model.setAndroidDnd($0) }))
                         .disabled(!model.active || model.androidDnd?.dndAllowed != true)
                     SwitchRow(title: "Silenciar avisos no Mac", isOn: $model.quiet)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Estilo dos avisos").font(.system(size: 13, weight: .semibold))
+                        HStack(spacing: 8) {
+                            ForEach(NoticeStyle.allCases, id: \.rawValue) { style in
+                                Button(style.title) { model.noticeStyle = style }
+                                    .buttonStyle(NexusPillStyle(selected: model.noticeStyle == style, compact: true))
+                                    .accessibilityAddTraits(model.noticeStyle == style ? .isSelected : [])
+                            }
+                        }
+                        Text(model.noticeStyle == .custom ? "Um cartão no canto da tela, com o ícone do app do celular."
+                             : "O aviso do macOS (o ícone do app aparece como imagem ao lado).")
+                            .font(.system(size: 11.5)).foregroundStyle(palette.muted)
+                    }
+                    .padding(.vertical, 10)
                     SwitchRow(title: "Copiar códigos de verificação", subtitle: "Copia o código de SMS e e-mails e avisa no canto da tela",
                               isOn: $model.codeAutofill, showsDivider: false)
                     Button("Autorizar Central de Notificações") { model.notifications.askPermission() }

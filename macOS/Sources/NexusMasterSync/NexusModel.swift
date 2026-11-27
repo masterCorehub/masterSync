@@ -122,6 +122,11 @@ final class NexusModel: ObservableObject {
         didSet { persist(hideNotices, "hide-notices"); updateNotifications(); notifications.removeAll(); refreshNotices() }
     }
     @Published var quiet: Bool { didSet { persist(quiet, "quiet"); updateNotifications() } }
+    /// Standard macOS banner, or the card in the corner of the screen with the phone app's icon.
+    @Published var noticeStyle = NoticeStyle(stored: UserDefaults.standard.string(forKey: "notice-style")) {
+        didSet { UserDefaults.standard.set(noticeStyle.rawValue, forKey: "notice-style"); updateNotifications() }
+    }
+    private lazy var noticeBanner = NoticeBannerController(open: { [weak self] in self?.section = .notifications })
     @Published var blockedApps: Set<String> {
         didSet { preferences.set(Array(blockedApps), forKey: "blocked-apps"); updateNotifications(); notifications.removeAll(); refreshNotices() }
     }
@@ -1070,6 +1075,8 @@ final class NexusModel: ObservableObject {
         notifications.enabled = notificationsEnabled
         notifications.hideContent = hideNotices
         notifications.quiet = quiet
+        notifications.style = noticeStyle
+        notifications.showCustomBanner = { [weak self] in self?.noticeBanner.show($0) }
         notifications.blocked = blockedApps
         if !notificationsEnabled { notifications.removeAll() }
     }

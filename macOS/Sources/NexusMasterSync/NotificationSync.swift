@@ -54,6 +54,9 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
     var enabled = false
     var hideContent = true
     var quiet = false
+    /// Which banner an Android notification gets; `.custom` calls `showCustomBanner` instead of the macOS notification center.
+    var style: NoticeStyle = .system
+    var showCustomBanner: ((Notice) -> Void)?
     var blocked: Set<String> = []
     var send: ((String, Message) -> Void)?
     private lazy var center: UNUserNotificationCenter? = Bundle.main.bundleURL.pathExtension == "app" ? .current() : nil
@@ -131,7 +134,12 @@ final class NotificationSync: NSObject, ObservableObject, UNUserNotificationCent
         notices.removeAll { $0.id == id }
         notices.append(entry)
         notices.sort(by: newestFirst)
-        guard !quiet, change, let center else { return }
+        guard !quiet, change else { return }
+        if style == .custom {
+            showCustomBanner?(entry)
+            return
+        }
+        guard let center else { return }
         let content = UNMutableNotificationContent()
         content.title = entry.app
         content.subtitle = entry.title
