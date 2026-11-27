@@ -321,6 +321,22 @@ final class ADBClipboardSession: @unchecked Sendable {
         }
     }
 
+    /// Runs one command in the phone's shell. The command is built only from validated, quoted paths.
+    func runShell(serial: String, command: String) throws -> String {
+        let result = try capture(["-s", serial, "shell", command])
+        guard result.1 == 0 else { throw NexusError.transfer("O celular não respondeu ao comando. Confira a conexão ADB.") }
+        return String(decoding: result.0, as: UTF8.self)
+    }
+
+    /// Copies a file or folder from the phone to [local].
+    func pull(serial: String, remote: String, local: URL) throws {
+        let result = try capture(["-s", serial, "pull", remote, local.path], diagnostics: true)
+        let output = String(decoding: result.0, as: UTF8.self)
+        guard result.1 == 0, !output.lowercased().contains("error") else {
+            throw NexusError.transfer(String(output.split(whereSeparator: \.isNewline).last ?? "falha ao copiar").prefix(120).description)
+        }
+    }
+
     /// Turns the screen off, which locks the phone.
     func lockScreen(serial: String) throws {
         try sendInput(serial: serial, arguments: ["keyevent", "KEYCODE_SLEEP"])

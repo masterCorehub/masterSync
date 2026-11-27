@@ -343,3 +343,52 @@ extension ShellRenderTests {
         XCTAssertTrue(OverviewScreen.isWide(width: 860))
     }
 }
+
+
+// MARK: Files screen
+
+@MainActor
+extension ShellRenderTests {
+    private func filesFixture() throws -> (FileTransfers, PixelFilesModel) {
+        let storage = FileManager.default.temporaryDirectory.appendingPathComponent("files-render-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
+        let offer = #"{"id":"6f9619ff-8b86-d011-b42d-00c04fc964ff","name":"Roteiro_viagem.docx","mime":"application/msword","size":312000,"hash":"x"}"#
+        let sent = #"[{"peerID":"6f9619ff-8b86-d011-b42d-00c04fc964ff","offer":\#(offer),"url":"file:///tmp/Roteiro_viagem.docx","date":780000000}]"#
+        try Data(sent.utf8).write(to: storage.appendingPathComponent("sent-history.json"))
+        let files = FileTransfers(storage: storage, send: { _, _ in })
+        let pixel = PixelFilesModel(downloads: storage)
+        pixel.shell = { command in
+            if command.hasPrefix("ls -la") {
+                return "drwxrws--- 2 u0 media_rw 4096 2025-11-26 10:15 Download\ndrwxrws--- 2 u0 media_rw 4096 2025-11-26 10:15 DCIM\ndrwxrws--- 2 u0 media_rw 4096 2025-11-26 10:15 Documents\ndrwxrws--- 2 u0 media_rw 4096 2025-11-26 10:15 Music\ndrwxrws--- 2 u0 media_rw 4096 2025-11-26 10:15 Recordings"
+            }
+            if command.hasPrefix("df") { return "Filesystem 1K-blocks Used Available Use% Mounted on\n/dev/fuse 250000000 176000000 74000000 70% /storage" }
+            if command.hasPrefix("du") { return "74000000\t/sdcard/DCIM\n52000000\t/sdcard/Music\n21000000\t/sdcard/Android/media/com.whatsapp" }
+            return "Download 38\nDCIM 1204\nDocuments 12\nMusic 86\nRecordings 9"
+        }
+        await_ { await pixel.open(PixelPath.root) }
+        await_ { await pixel.loadOverview() }
+        return (files, pixel)
+    }
+
+    /// Runs async work to completion from a synchronous test body.
+    private func await_(_ work: @escaping () async -> Void) {
+        let done = expectation(description: "async")
+        Task { await work(); done.fulfill() }
+        wait(for: [done], timeout: 5)
+    }
+
+    func testFilesScreenRendersBothTabs() throws {
+        let (files, pixel) = try filesFixture()
+        let model = NexusModel()
+        for scheme in [ColorScheme.dark, .light] {
+            _ = try render(FilesScreen(model: model, files: files, pixel: pixel, chooseFiles: {}), name: "arquivos-transferencias",
+                           scheme: scheme, width: 944, height: 640)
+            _ = try render(FilesScreen(model: model, files: files, pixel: pixel, chooseFiles: {}, initialTab: .pixel, pixelAvailable: true),
+                           name: "arquivos-pixel", scheme: scheme, width: 944, height: 640)
+        }
+        _ = try render(FilesScreen(model: model, files: files, pixel: pixel, chooseFiles: {}, initialTab: .pixel, pixelAvailable: false),
+                       name: "arquivos-sem-adb", scheme: .dark, width: 944, height: 520)
+        _ = try render(FilesScreen(model: model, files: files, pixel: pixel, chooseFiles: {}), name: "arquivos-estreita",
+                       scheme: .dark, width: 484, height: 900)
+    }
+}

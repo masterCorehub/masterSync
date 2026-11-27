@@ -115,9 +115,9 @@ struct Dashboard: View {
         .onChange(of: model.latestInstantPhoto?.id) { _, _ in
             if let photo = model.latestInstantPhoto { preview = photo.url }
         }
-        .fileImporter(isPresented: $imported, allowedContentTypes: [.item]) {
+        .fileImporter(isPresented: $imported, allowedContentTypes: [.item, .folder], allowsMultipleSelection: true) {
             switch $0 {
-            case .success(let url): model.sendFile(url)
+            case .success(let urls): model.sendItems(urls)
             case .failure(let error): model.problem = error.localizedDescription
             }
         }
@@ -192,16 +192,6 @@ struct Dashboard: View {
             ScrollViewReader { scroll in
                 SnapshotAwareScroll {
                     VStack(alignment: .leading, spacing: 20) {
-                        if model.section == .files {
-                            HStack {
-                                Spacer()
-                                Button { imported = true } label: {
-                                    Label("Enviar novo", systemImage: "arrow.up")
-                                }
-                                .buttonStyle(NexusPillStyle(compact: true)).disabled(!model.canSendFiles)
-                            }
-                        }
-
                         if let problem = model.problem ?? model.networkProblem {
                             Label(problem, systemImage: "exclamationmark.circle")
                                 .foregroundStyle(palette.accent)
@@ -970,65 +960,7 @@ struct Dashboard: View {
     }
 
     private var files: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Button { imported = true } label: {
-                VStack(spacing: 10) {
-                    IconBadge(systemName: "arrow.up.doc", size: 54)
-                    Text("Arraste arquivos aqui para enviar ao \(model.selected?.name ?? "celular")")
-                        .font(.system(size: 15, weight: .semibold))
-                    Text("ou clique para escolher · salvos em Downloads/MasterSync")
-                        .font(.system(size: 12.5)).foregroundStyle(palette.muted)
-                }
-                .frame(maxWidth: .infinity).frame(height: 190)
-                .background(targetingFiles ? palette.accentSurface : palette.panel, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .strokeBorder(targetingFiles ? palette.accent : palette.faint, style: StrokeStyle(lineWidth: 1.5, dash: [7, 5]))
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!model.canSendFiles)
-            .opacity(model.canSendFiles ? 1 : 0.55)
-            .accessibilityLabel("Enviar arquivo ao celular")
-            if let feedback = model.files.feedback { empty(feedback) }
-            if !model.files.progress.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(model.files.progress) { transfer in
-                        HStack(spacing: 12) {
-                            Image(systemName: transfer.sending ? "arrow.up.right" : "arrow.down.left")
-                                .font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.accent)
-                                .frame(width: 36, height: 36)
-                                .background(palette.panel2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text(transfer.name).font(.system(size: 13.5, weight: .semibold)).lineLimit(1).truncationMode(.middle)
-                                    Spacer()
-                                    Text(transfer.verifying ? "Verificando…" : "\(Int(transfer.fraction * 100))%")
-                                        .font(.system(size: 12).monospacedDigit()).foregroundStyle(palette.muted)
-                                }
-                                ProgressView(value: transfer.fraction).progressViewStyle(.linear).tint(palette.fill)
-                            }
-                        }
-                        .padding(.vertical, 12)
-                        .overlay(alignment: .bottom) { Rectangle().fill(palette.line).frame(height: 1) }
-                    }
-                }
-                .padding(.horizontal, 16).padding(.vertical, 2)
-                .glassPanel(radius: 20)
-            }
-            Text("Recebidos").font(.system(size: 13, weight: .bold)).accessibilityAddTraits(.isHeader)
-            receivedGallery(model.files.received, empty: "Nenhum arquivo recebido.")
-            Text("Enviados").font(.system(size: 13, weight: .bold)).accessibilityAddTraits(.isHeader)
-            receivedGallery(model.files.sent, empty: "Nenhum arquivo enviado.")
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .dropDestination(for: URL.self) { urls, _ in
-            targetingFiles = false
-            guard model.canSendFiles, let file = urls.first, file.isFileURL else { return false }
-            model.sendFile(file)
-            return true
-        } isTargeted: { targetingFiles = $0 && model.canSendFiles }
+        FilesScreen(model: model, files: model.files, pixel: model.pixelFiles, chooseFiles: { imported = true })
     }
 
     private var notifications: some View {

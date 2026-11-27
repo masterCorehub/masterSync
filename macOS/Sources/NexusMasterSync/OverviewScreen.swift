@@ -373,7 +373,7 @@ private struct RecentPhotoTile: View {
 }
 
 /// Lets files be dropped on the screen. Skipped in snapshot tests, where ImageRenderer cannot draw the drop target.
-private struct FileDropModifier: ViewModifier {
+struct FileDropModifier: ViewModifier {
     let accept: (([URL]) -> Bool)?
     @Binding var targeting: Bool
     @Environment(\.nexusFlatBackdrop) private var snapshot

@@ -213,6 +213,14 @@ final class NexusModel: ObservableObject {
     let gallery = GalleryModel()
     let screen = ScreenMirror()
     let files: FileTransfers
+    let pixelFiles = PixelFilesModel()
+    private var pixelSerial: String?
+    @Published var openOnReceive = UserDefaults.standard.bool(forKey: "open-on-receive") {
+        didSet { UserDefaults.standard.set(openOnReceive, forKey: "open-on-receive") }
+    }
+    @Published var compressFolders = UserDefaults.standard.object(forKey: "compress-folders") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(compressFolders, forKey: "compress-folders") }
+    }
     private var scanPopup: ScanPopupController?
     private let preferences = UserDefaults.standard
     private let shareService = AndroidShareService()
@@ -264,7 +272,9 @@ final class NexusModel: ObservableObject {
         }
         screen.send = { [weak self] in self?.server?.send($1, to: $0) }
         gallery.send = { [weak self] in self?.server?.send($1, to: $0) }
+        configurePixelFiles()
         files.didReceive = { [weak self] file in
+            self?.openIfAsked(file)
             self?.gallery.received(file)
             self?.receiveInstantPhoto(file)
             self?.receiveScanPaste(file)
@@ -766,6 +776,82 @@ final class NexusModel: ObservableObject {
         case .scrcpy: screen.openAppWithScrcpy(app, wireless: target)
         case .mirror: screen.beginControl(peer, wireless: target, open: app)
         }
+    }
+
+    // MARK: Files
+
+    /// ADB over Wi-Fi for the phone's internal storage: one shell command, or one pull, per call.
+    private func configurePixelFiles() {
+        pixelFiles.shell = { [weak self] command in
+            try await self?.withPhoneADB { session, serial in try session.runShell(serial: serial, command: command) } ?? ""
+        }
+        pixelFiles.pull = { [weak self] remote, local in
+            _ = try await self?.withPhoneADB { session, serial in
+                try session.pull(serial: serial, remote: remote, local: local)
+                return ""
+            }
+        }
+    }
+
+    var pixelFilesAvailable: Bool { wirelessControlDevice(for: selected?.id) != nil && ADBClipboard.adbExecutable != nil }
+
+    private func withPhoneADB(_ work: @escaping @Sendable (ADBClipboardSession, String) throws -> String) async throws -> String {
+        guard let device = wirelessControlDevice(for: selected?.id), let adb = ADBClipboard.adbExecutable else {
+            throw NexusError.transfer("Configure o controle por Wi‑Fi (tela Dispositivos) para ver os arquivos do celular.")
+        }
+        let cached = pixelSerial
+        do {
+            let (serial, output) = try await Task.detached { () -> (String, String) in
+                let session = ADBClipboardSession(adb: adb)
+                let serial: String
+                if let cached { serial = cached } else { serial = try await session.wirelessSerial(for: device) }
+                return (serial, try work(session, serial))
+            }.value
+            pixelSerial = serial
+            return output
+        } catch {
+            pixelSerial = nil
+            throw error
+        }
+    }
+
+    private func openIfAsked(_ file: ReceivedFile) {
+        guard openOnReceive, !file.offer.isScanPage else { return }
+        NSWorkspace.shared.open(file.url)
+    }
+
+    /// Sends files and folders to the phone without leaving the screen. Folders travel as .zip, or are refused when the option is off.
+    @discardableResult
+    func sendItems(_ urls: [URL]) -> Bool {
+        guard canSendFiles, let peer = selected?.id else { return false }
+        var plain: [URL] = [], folders: [URL] = []
+        for url in urls where url.isFileURL {
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { continue }
+            if isDirectory.boolValue { folders.append(url) } else { plain.append(url) }
+        }
+        if !folders.isEmpty && !compressFolders {
+            actionFeedback = "Ative “Compactar pastas” para enviar pastas."
+            folders = []
+        }
+        let sentNow = plain.isEmpty ? false : files.offerBatch(plain, to: peer)
+        if !folders.isEmpty {
+            actionFeedback = "Compactando \(folders.count == 1 ? folders[0].lastPathComponent : "\(folders.count) pastas")…"
+            Task {
+                let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("mastersync-zip-\(UUID().uuidString)")
+                try? FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+                var archives: [URL] = []
+                for folder in folders {
+                    if let archive = try? await Task.detached(priority: .utility, operation: { try FolderZip.zip(folder, into: temporary) }).value {
+                        archives.append(archive)
+                    }
+                }
+                actionFeedback = archives.isEmpty ? "Não foi possível compactar a pasta." : nil
+                if !archives.isEmpty { _ = files.offerBatch(archives, to: peer) }
+            }
+            return true
+        }
+        return sentNow
     }
 
     // MARK: Pinned apps as Mac apps

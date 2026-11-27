@@ -341,6 +341,24 @@ final class FileTransfers: ObservableObject {
         if let file = received.first(where: { $0.peerID == peer && $0.offer.id == id }) { didReceive?(file) }
     }
 
+    /// Where received files are kept on this Mac.
+    var receivedDirectory: URL { storage }
+
+    private func saveSentHistory() {
+        try? JSONEncoder().encode(sent).write(to: sentHistoryURL, options: .atomic)
+    }
+
+    /// Forgets one sent file in the list (the file on the phone and on the Mac stay where they are).
+    func removeSent(_ id: String) {
+        sent.removeAll { $0.id == id }
+        saveSentHistory()
+    }
+
+    func clearSent() {
+        sent = []
+        saveSentHistory()
+    }
+
     func trashReceived(_ id: String) {
         guard let item = received.first(where: { $0.id == id }) else { return }
         do {
