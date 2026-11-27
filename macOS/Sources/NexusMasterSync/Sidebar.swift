@@ -154,7 +154,7 @@ struct Sidebar: View {
                                 }
                             }
                             .frame(maxWidth: .infinity).aspectRatio(1, contentMode: .fit)
-                            .background(model.launcherIcons[app.id] == nil ? NexusPalette.hueColor(Double(abs(app.id.hashValue % 360))) : palette.panel2,
+                            .background(model.launcherIcons[app.id] == nil ? NexusPalette.hueColor(NexusPalette.stableHue(app.id)) : palette.panel2,
                                         in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                         }
                         .buttonStyle(.plain)

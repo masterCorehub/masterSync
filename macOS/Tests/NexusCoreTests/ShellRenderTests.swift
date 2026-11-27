@@ -98,4 +98,30 @@ final class ShellRenderTests: XCTestCase {
             }
         }
     }
+
+    // MARK: Apps
+
+    private func appsData(loaded: Bool, session: Bool = false) -> AppsScreenData {
+        let apps = loaded ? ["Câmera", "WhatsApp", "Spotify", "Nubank", "Maps", "iFood", "Gmail", "Fotos"].enumerated().map {
+            AndroidApp(component: "com.example.app\($0.offset)/.Main", label: $0.element) } : []
+        return AppsScreenData(phoneName: "Pixel 9 Pro", apps: apps, listLoaded: loaded,
+                              pins: loaded ? [apps[1].id, apps[2].id, apps[4].id] : [], icons: [:], active: true,
+                              launcherAvailable: true, canLaunch: true, needsWirelessSetup: false,
+                              session: session ? AppsSession(title: "Controle do celular", state: "Em andamento") : nil)
+    }
+
+    func testAppsScreenRendersEmptyAndWithApps() throws {
+        for scheme in [ColorScheme.dark, .light] {
+            for (name, data) in [("vazio", appsData(loaded: false)), ("com-apps", appsData(loaded: true, session: true))] {
+                let image = try render(AppsScreen(data: data, actions: AppsScreenActions()), name: "apps-\(name)", scheme: scheme,
+                                       width: 944, height: 720)
+                XCTAssertEqual(image.size.width, 944, accuracy: 1)
+            }
+        }
+    }
+
+    func testAppsScreenRendersInANarrowWindow() throws {
+        _ = try render(AppsScreen(data: appsData(loaded: true), actions: AppsScreenActions()), name: "apps-estreita", scheme: .dark,
+                       width: 484, height: 1000)
+    }
 }

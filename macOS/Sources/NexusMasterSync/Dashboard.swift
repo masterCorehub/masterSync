@@ -15,8 +15,6 @@ struct Dashboard: View {
     @State private var pendingScanDeletion: ReceivedFile?
     @State private var imported = false
     @State private var targetingPhoneDrop = false
-    @State private var showingLauncher = false
-    @State private var launcherSearch = ""
     @AppStorage("android-launcher-pins") private var storedLauncherPins = Data()
     @State private var chatDraft = ""
     @State private var peerSearch = ""
@@ -47,7 +45,10 @@ struct Dashboard: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Sidebar(model: model, pinnedApps: sidebarPinnedApps, openApp: { app in model.launchAndroidApp(app) },
+            Sidebar(model: model, pinnedApps: sidebarPinnedApps,
+                    openApp: { app in
+                        if canLaunchApps { model.launchAndroidApp(app); model.section = .remote } else { model.section = .apps }
+                    },
                     manageApps: { model.section = .apps })
             VStack(spacing: 0) {
                 ContentHeader(model: model, gallery: model.gallery, notificationButton: AnyView(notificationButton))
@@ -72,6 +73,8 @@ struct Dashboard: View {
             }
         }
         .background { NexusBackdrop() }
+        .task(id: model.launcherAvailable && !(model.selected?.id ?? "").isEmpty ? model.selected?.id ?? "" : "") { model.refreshLauncher() }
+        .task(id: launcherIconsKey) { model.requestLauncherIcons(for: launcherPins[model.selected?.id ?? ""] ?? []) }
         .foregroundStyle(palette.ink)
         .tint(accent)
         .toggleStyle(.switch)
@@ -192,7 +195,8 @@ struct Dashboard: View {
                         case .notifications: notifications
                         case .remote: remote
                         case .settings: settings
-                        case .apps, .calls, .sms, .webcam: EmptyView()
+                        case .apps: appsScreen
+                        case .calls, .sms, .webcam: EmptyView()
                         }
                     }
                     .padding(.horizontal, 26)
@@ -274,132 +278,45 @@ struct Dashboard: View {
         if let data = try? JSONEncoder().encode(saved) { storedLauncherPins = data }
     }
 
+    private var appsScreen: some View {
+        let peer = model.selected?.id ?? ""
+        let apps = model.launcherLists[peer] ?? []
+        let pins = launcherPins[peer] ?? []
+        let screen = model.screen
+        var actions = AppsScreenActions()
+        actions.open = { app in
+            model.launchAndroidApp(app)
+            model.section = .remote
+        }
+        actions.togglePin = { id in setPinned(id, peer: peer, pinned: !pins.contains(id)) }
+        actions.refresh = { model.refreshLauncher() }
+        actions.setupWireless = { openWirelessControlGuide() }
+        actions.focusSession = { model.section = .remote }
+        actions.closeSession = { screen.endAll() }
+        let session: AppsSession? = (screen.inAppControl || screen.inAppStarting || (screen.controlling && screen.sharing))
+            ? AppsSession(title: "Controle do celular", state: screen.inAppStarting ? "Conectando…" : "Em andamento") : nil
+        let data = AppsScreenData(
+            phoneName: model.selected?.name ?? "celular", apps: apps, listLoaded: model.launcherLists[peer] != nil, pins: pins,
+            icons: model.launcherIcons, active: model.active, launcherAvailable: model.launcherAvailable, canLaunch: canLaunchApps,
+            needsWirelessSetup: model.wirelessControlDevice(for: peer) == nil, session: session)
+        return AppsScreen(data: data, actions: actions)
+    }
+
+    /// Changes when the pins, the phone or the phone's app list change, so icons are requested for what the side bar shows.
+    private var launcherIconsKey: [String] {
+        let peer = model.selected?.id ?? ""
+        return (launcherPins[peer] ?? []) + [peer, model.launcherLists[peer] == nil ? "" : "ready"]
+    }
+
     private var sidebarPinnedApps: [AndroidApp] {
         let peer = model.selected?.id ?? ""
         let apps = model.launcherLists[peer] ?? []
-        return (launcherPins[peer] ?? []).compactMap { id in apps.first { $0.id == id } }.prefix(5).map { $0 }
+        return AppsCatalog.sidebarPins(AppsCatalog.pinned(apps, ids: launcherPins[peer] ?? []))
     }
 
     private var canLaunchApps: Bool {
         (model.canMirror || model.screen.inAppAvailable) && model.wirelessControlDevice(for: model.selected?.id) != nil
             && !model.screen.preparingControl && !model.screen.inAppStarting
-    }
-
-    private var androidLauncher: some View {
-        let peer = model.selected?.id ?? ""
-        let apps = model.launcherLists[peer] ?? []
-        let pins = launcherPins[peer] ?? []
-        let pinnedApps = pins.compactMap { id in apps.first { $0.id == id } }
-        return VStack(alignment: .leading, spacing: 9) {
-            Button {
-                launcherSearch = ""
-                showingLauncher.toggle()
-                if showingLauncher { model.refreshLauncher() }
-            } label: {
-                Label("Apps do Android", systemImage: "square.grid.2x2")
-            }
-            .buttonStyle(NexusPillStyle(compact: true))
-            .popover(isPresented: $showingLauncher, arrowEdge: .bottom) {
-                launcherPopover(apps: apps, peer: peer, pins: pins)
-            }
-            let withIcon = pinnedApps.filter { model.launcherIcons[$0.id] != nil }
-            let withoutIcon = pinnedApps.filter { model.launcherIcons[$0.id] == nil }
-            if !withIcon.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 8)], alignment: .leading, spacing: 8) {
-                    ForEach(withIcon) { app in pinnedAppButton(app, peer: peer) }
-                }
-            }
-            if !withoutIcon.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], alignment: .leading, spacing: 8) {
-                    ForEach(withoutIcon) { app in pinnedAppButton(app, peer: peer) }
-                }
-            }
-        }
-        .task(id: model.launcherAvailable && !peer.isEmpty ? peer : "") { model.refreshLauncher() }
-        .task(id: pins + [peer, model.launcherLists[peer] == nil ? "" : "ready"]) {
-            model.requestLauncherIcons(for: pins)
-        }
-        .onChange(of: peer) { _, _ in showingLauncher = false }
-    }
-
-    private func pinnedAppButton(_ app: AndroidApp, peer: String) -> some View {
-        let label = Wire.visible(app.label, limit: 70)
-        return Button { model.launchAndroidApp(app) } label: {
-            if let icon = model.launcherIcons[app.id] {
-                Image(nsImage: icon).resizable().interpolation(.high).scaledToFit()
-                    .frame(width: 32, height: 32)
-            } else {
-                Text(label).lineLimit(1).frame(maxWidth: .infinity)
-            }
-        }
-        .buttonStyle(model.launcherIcons[app.id] == nil ? NexusPillStyle(compact: true) : NexusPillStyle(compact: true, segmented: true))
-        .help(label)
-        .accessibilityLabel(label)
-        .disabled(!canLaunchApps)
-        .contextMenu {
-            Button("Desafixar", systemImage: "pin.slash") { setPinned(app.id, peer: peer, pinned: false) }
-        }
-    }
-
-    private func launcherPopover(apps: [AndroidApp], peer: String, pins: [String]) -> some View {
-        let filtered = apps.filter {
-            launcherSearch.isEmpty || $0.label.localizedStandardContains(launcherSearch)
-                || $0.component.localizedStandardContains(launcherSearch)
-        }
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Apps do Android").font(.headline)
-                Spacer()
-                Button { model.refreshLauncher() } label: { Image(systemName: "arrow.clockwise") }
-                    .disabled(!model.launcherAvailable).accessibilityLabel("Atualizar lista de apps")
-            }
-            if !model.active {
-                empty("Conecte o Android para carregar os apps.")
-            } else if !model.launcherAvailable {
-                empty("Atualize o MasterSync no Android para ver os apps.")
-            } else {
-                if model.wirelessControlDevice(for: peer) == nil {
-                    Button("Configurar controle por Wi-Fi") {
-                        showingLauncher = false
-                        openWirelessControlGuide()
-                    }
-                    .buttonStyle(NexusPillStyle(compact: true))
-                } else if !model.canMirror {
-                    empty("Ative o espelhamento no MasterSync do Android.")
-                }
-                TextField("Buscar app", text: $launcherSearch).textFieldStyle(.roundedBorder)
-                if model.launcherLists[peer] == nil {
-                    Text("Aguardando a lista do Android…").foregroundStyle(palette.muted)
-                } else if filtered.isEmpty {
-                    empty("Nenhum app encontrado.")
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 3) {
-                            ForEach(filtered) { app in
-                                let pinned = pins.contains(app.id)
-                                HStack {
-                                    Button {
-                                        showingLauncher = false
-                                        model.launchAndroidApp(app)
-                                    } label: {
-                                        Label(Wire.visible(app.label, limit: 70), systemImage: "app")
-                                            .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-                                    }
-                                    .buttonStyle(.plain).disabled(!canLaunchApps)
-                                    Button { setPinned(app.id, peer: peer, pinned: !pinned) }
-                                    label: { Image(systemName: pinned ? "pin.fill" : "pin") }
-                                    .buttonStyle(NexusPillStyle(compact: true))
-                                    .help(pinned ? "Desafixar app" : "Fixar app")
-                                    .accessibilityLabel(pinned ? "Desafixar app" : "Fixar app")
-                                }
-                                .padding(.vertical, 3)
-                            }
-                        }
-                    }
-                    .frame(height: 240)
-                }
-            }
-        }.padding(15).frame(width: 320)
     }
 
     private var audioPanel: some View {
@@ -636,7 +553,7 @@ struct Dashboard: View {
         name.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased()
     }
 
-    private func hue(for id: String) -> Double { Double(id.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) % 360 }) }
+    private func hue(for id: String) -> Double { NexusPalette.stableHue(id) }
 
     private var conversationList: some View {
         let peers = model.peers.filter { peerSearch.isEmpty || $0.name.localizedCaseInsensitiveContains(peerSearch) }

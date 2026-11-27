@@ -40,6 +40,17 @@ extension NexusPalette {
         return Color(red: encode(r), green: encode(g), blue: encode(bl))
     }
 
+    /// A hue (0..<360) that stays the same between launches, so an app or person keeps its color.
+    static func stableHue(_ text: String) -> Double {
+        // FNV-1a, so package names that differ in one character still land far apart on the color wheel.
+        var hash: UInt32 = 2_166_136_261
+        for byte in text.utf8 { hash = (hash ^ UInt32(byte)) &* 16_777_619 }
+        hash ^= hash >> 15
+        hash = hash &* 2_246_822_519
+        hash ^= hash >> 13
+        return Double(hash % 360)
+    }
+
     /// The design's avatar/app color for a hue.
     static func hueColor(_ hue: Double) -> Color { oklch(0.6, 0.15, hue) }
 }
