@@ -1,113 +1,31 @@
 import SwiftUI
 
-private enum SectionGroup: String, CaseIterable {
-    case home = "Celular"
-    case conversation = "Conversa"
-    case library = "Galeria"
-    case connection = "Conexão"
-
-    var sections: [Section] {
-        switch self {
-        case .home: [.overview]
-        case .conversation: [.conversation]
-        case .library: [.gallery, .documents, .files]
-        case .connection: [.devices, .settings]
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .home: "iphone"
-        case .conversation: "bubble.left.and.bubble.right"
-        case .library: "photo.on.rectangle"
-        case .connection: "link"
-        }
-    }
-
-    init(section: Section) {
-        switch section {
-        case .conversation: self = .conversation
-        case .overview, .clipboard, .notifications, .remote, .apps, .calls, .sms, .webcam: self = .home
-        case .gallery, .documents, .files: self = .library
-        case .devices, .settings: self = .connection
-        }
-    }
-}
-
-struct DashboardHeader: View {
+/// The title line above each screen: name and subtitle, with the gallery search, notifications and stop-sharing at the right.
+struct ContentHeader: View {
     @ObservedObject var model: NexusModel
     @ObservedObject var gallery: GalleryModel
     var notificationButton: AnyView
     @Environment(\.colorScheme) private var scheme
-    @State private var showingActions = false
-    @State private var lastSection: [SectionGroup: Section] = [:]
 
     private var palette: NexusPalette { NexusPalette(scheme: scheme) }
-    private var group: SectionGroup { SectionGroup(section: model.section) }
     private var hasGallerySearch: Bool { model.section == .gallery && model.canBrowseGallery && gallery.advanced }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 17) {
-            HStack(spacing: 15) {
-                wordmark
-                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                groups
-                    .fixedSize()
-                // Equal side widths keep the tabs centered when search appears.
-                HStack(spacing: 15) {
-                    if hasGallerySearch { search }
-                    notificationButton
-                    actions
-                }
-                .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
+        HStack(spacing: 12) {
+            Text(model.section.title)
+                .font(.system(size: 20, weight: .bold)).tracking(-0.2)
+                .accessibilityAddTraits(.isHeader)
+            Text(model.section.subtitle)
+                .font(.system(size: 12.5)).foregroundStyle(palette.muted).lineLimit(1)
+            Spacer(minLength: 12)
+            if hasGallerySearch { search }
+            if model.screen.sharing {
+                Button { model.screen.end() } label: { Label("Parar espelhamento", systemImage: "stop.circle") }
+                    .buttonStyle(NexusPillStyle(compact: true))
             }
-            if group == .library {
-                HStack(spacing: 8) {
-                    ForEach(group.sections) { section in
-                        Button { model.section = section } label: {
-                            Label(section.rawValue, systemImage: section.icon)
-                                .lineLimit(1).fixedSize()
-                        }
-                        .buttonStyle(NexusPillStyle(selected: model.section == section, compact: true))
-                        .accessibilityAddTraits(model.section == section ? .isSelected : [])
-                    }
-                }
-            }
+            notificationButton
         }
-        .onChange(of: model.section) {
-            // Returning to a group restores the last section the user opened there.
-            if SectionGroup(section: model.section) == .library { lastSection[.library] = model.section }
-        }
-    }
-
-    private var wordmark: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "arrow.left.arrow.right")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(palette.accent)
-                .frame(width: 35, height: 35)
-                .background(palette.accentSurface, in: RoundedRectangle(cornerRadius: 11))
-            Text("MasterSync").font(.system(size: 20, weight: .bold, design: .rounded))
-                .tracking(-0.4).foregroundStyle(palette.accent).fixedSize()
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("MasterSync")
-    }
-
-    private var groups: some View {
-        HStack(spacing: 4) {
-            ForEach([SectionGroup.home, .conversation, .library], id: \.self) { item in
-                Button {
-                    if let section = lastSection[item] ?? item.sections.first { model.section = section }
-                } label: {
-                    Label(item.rawValue, systemImage: item.icon).fixedSize()
-                }
-                .buttonStyle(NexusPillStyle(selected: item == group, segmented: true))
-                .accessibilityAddTraits(item == group ? .isSelected : [])
-            }
-        }
-        .padding(4)
-        .background(palette.surface, in: Capsule())
+        .frame(height: 58)
     }
 
     private var search: some View {
@@ -123,45 +41,9 @@ struct DashboardHeader: View {
         }
         .padding(.horizontal, 13)
         .frame(minWidth: 0, maxWidth: 210)
-        .frame(height: 36)
-        .background(palette.control, in: Capsule())
-    }
-
-    private var actions: some View {
-        Button { showingActions = true } label: {
-            Image(systemName: "gearshape").font(.system(size: 14, weight: .bold))
-                .frame(width: 36, height: 36)
-                .background(palette.control, in: Circle())
-                .contentShape(.circle)
-        }
-        .buttonStyle(.plain)
-        .fixedSize()
-        .accessibilityLabel("Configurações e dispositivos")
-        .popover(isPresented: $showingActions, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 9) {
-                action("Dispositivos", icon: Section.devices.icon) { model.section = .devices }
-                action("Configurações", icon: Section.settings.icon) { model.section = .settings }
-                Divider()
-                action("Área de transferência", icon: Section.clipboard.icon) { model.section = .clipboard }
-                action("Controle em janela separada", icon: "macwindow") { model.section = .remote }
-                if model.screen.sharing {
-                    Divider()
-                    action("Parar espelhamento", icon: "stop.circle") { model.screen.end() }
-                }
-            }
-            .padding(13)
-            .frame(width: 205)
-        }
-    }
-
-    private func action(_ title: String, icon: String, open: @escaping () -> Void) -> some View {
-        Button {
-            showingActions = false
-            open()
-        } label: {
-            Label(title, systemImage: icon)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }.buttonStyle(.borderless)
+        .frame(height: 34)
+        .background(palette.input, in: Capsule())
+        .overlay { Capsule().strokeBorder(palette.line) }
     }
 }
 

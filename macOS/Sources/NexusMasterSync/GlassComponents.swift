@@ -3,8 +3,17 @@ import SwiftUI
 
 /// The window's glass: blurs what is behind the window, like the design's frosted panel.
 struct GlassBackground: NSViewRepresentable {
+    /// Lets the window itself be see-through, so the blur has something behind it.
+    private final class GlassView: NSVisualEffectView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.isOpaque = false
+            window?.backgroundColor = .clear
+        }
+    }
+
     func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
+        let view = GlassView()
         view.material = .underWindowBackground
         view.blendingMode = .behindWindow
         view.state = .active

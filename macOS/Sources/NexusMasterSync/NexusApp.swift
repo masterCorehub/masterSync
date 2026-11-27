@@ -25,7 +25,7 @@ struct NexusApp: App {
                     model.screen.stopUSB()
                 }
         }
-        .defaultSize(width: 1170, height: 760)
+        .defaultSize(width: 1240, height: 790)
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandMenu("Sincronização") {

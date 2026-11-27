@@ -44,27 +44,29 @@ struct Dashboard: View {
     private var accent: Color { palette.accent }
 
     var body: some View {
-        VStack(spacing: 0) {
-            DashboardHeader(model: model, gallery: model.gallery, notificationButton: AnyView(notificationButton))
-                .padding(.horizontal, 28)
-                .padding(.top, 30)
-                .padding(.bottom, 18)
+        HStack(spacing: 0) {
+            Sidebar(model: model, pinnedApps: sidebarPinnedApps, openApp: { app in model.launchAndroidApp(app) },
+                    manageApps: { model.section = .apps })
+            VStack(spacing: 0) {
+                ContentHeader(model: model, gallery: model.gallery, notificationButton: AnyView(notificationButton))
+                    .padding(.horizontal, 26)
 
-            if model.section == .conversation {
-                conversationPanel
-                    .padding(.horizontal, 28)
-                    .padding(.bottom, 22)
-                    .onChange(of: model.selected?.id) { _, _ in chatDraft = "" }
-                    .onChange(of: latestScanPage?.id) { _, page in
-                        if page != nil { model.section = .documents }
-                    }
-            } else {
-                dashboardContent
-            }
+                if model.section == .conversation {
+                    conversationPanel
+                        .padding(.horizontal, 26)
+                        .padding(.bottom, 22)
+                        .onChange(of: model.selected?.id) { _, _ in chatDraft = "" }
+                        .onChange(of: latestScanPage?.id) { _, page in
+                            if page != nil { model.section = .documents }
+                        }
+                } else {
+                    dashboardContent
+                }
 
-            if model.section == .devices {
-                ConnectionBar(model: model) { imported = true }
-                    .padding(.horizontal, 23).padding(.top, 12).padding(.bottom, 19)
+                if model.section == .devices {
+                    ConnectionBar(model: model) { imported = true }
+                        .padding(.horizontal, 23).padding(.top, 12).padding(.bottom, 19)
+                }
             }
         }
         .background { NexusBackdrop() }
@@ -151,14 +153,8 @@ struct Dashboard: View {
             ScrollViewReader { scroll in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
-                        if model.section != .overview {
+                        if model.section == .documents || model.section == .files {
                             HStack {
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text(model.section.rawValue)
-                                        .font(.system(size: 33, weight: .semibold, design: .rounded))
-                                        .tracking(-0.75)
-                                        .accessibilityAddTraits(.isHeader)
-                                }
                                 Spacer()
                                 if model.section == .documents {
                                     Button { model.requestScan() } label: {
@@ -197,9 +193,9 @@ struct Dashboard: View {
                         case .apps, .calls, .sms, .webcam: EmptyView()
                         }
                     }
-                    .padding(.horizontal, 28)
-                    .padding(.top, 5)
-                    .padding(.bottom, 20)
+                    .padding(.horizontal, 26)
+                    .padding(.top, 4)
+                    .padding(.bottom, 26)
                     .frame(maxWidth: 1650, alignment: .leading)
                     .frame(maxWidth: .infinity)
                 }
@@ -283,6 +279,12 @@ struct Dashboard: View {
         if pinned { ids.append(id) }
         saved[peer] = ids
         if let data = try? JSONEncoder().encode(saved) { storedLauncherPins = data }
+    }
+
+    private var sidebarPinnedApps: [AndroidApp] {
+        let peer = model.selected?.id ?? ""
+        let apps = model.launcherLists[peer] ?? []
+        return (launcherPins[peer] ?? []).compactMap { id in apps.first { $0.id == id } }.prefix(5).map { $0 }
     }
 
     private var canLaunchApps: Bool {
