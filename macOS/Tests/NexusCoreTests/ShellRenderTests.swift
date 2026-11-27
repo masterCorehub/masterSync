@@ -392,3 +392,41 @@ extension ShellRenderTests {
                        scheme: .dark, width: 484, height: 900)
     }
 }
+
+
+// MARK: SMS
+
+@MainActor
+extension ShellRenderTests {
+    func testSmsScreenRendersUnavailableAndWithConversations() throws {
+        let model = NexusModel()
+        _ = try render(SmsScreen(model: model, sms: model.sms), name: "sms-indisponivel", scheme: .dark, width: 944, height: 560)
+        let sms = SmsModel()
+        var requests: [Message] = []
+        sms.send = { requests.append($0) }
+        sms.refresh()
+        var threads = Message("smsThreads")
+        threads.id = requests.last?.id
+        let list = """
+        [{"id":"1","address":"+5511999990000","name":"Lucas Andrade","snippet":"Fechado. Te mando a versão nova até as 16h","date":\(Int64(Date.now.timeIntervalSince1970 * 1000)),"unread":2,"count":8},
+         {"id":"2","address":"29104","snippet":"Seu código de verificação é 482 913","date":\(Int64(Date.now.timeIntervalSince1970 * 1000) - 90_000_000),"unread":0,"count":1},
+         {"id":"3","address":"NUBANK","snippet":"Compra aprovada R$ 38,90","date":\(Int64(Date.now.timeIntervalSince1970 * 1000) - 400_000_000),"unread":0,"count":3}]
+        """
+        threads.smsThreads = try JSONDecoder().decode([SmsThread].self, from: Data(list.utf8))
+        sms.receive(threads)
+        sms.open("1")
+        var messages = Message("smsMessages")
+        messages.id = requests.last?.id
+        messages.threadId = "1"
+        let now = Int64(Date.now.timeIntervalSince1970 * 1000)
+        messages.smsEntries = [
+            SmsEntry(id: "a", threadId: "1", address: "+5511999990000", body: "Conseguiu ver o protótipo?", date: now - 600_000, outgoing: false),
+            SmsEntry(id: "b", threadId: "1", address: "+5511999990000", body: "Vi sim! Ficou muito bom, só ajustaria o onboarding.", date: now - 300_000, outgoing: true),
+            SmsEntry(id: "c", threadId: "1", address: "+5511999990000", body: "Fechado. Te mando a versão nova até as 16h", date: now - 60_000, outgoing: false)]
+        sms.receive(messages)
+        for scheme in [ColorScheme.dark, .light] {
+            _ = try render(SmsScreen(model: model, sms: sms, availableOverride: true), name: "sms", scheme: scheme, width: 944, height: 560)
+        }
+        _ = try render(SmsScreen(model: model, sms: sms, availableOverride: true), name: "sms-estreita", scheme: .dark, width: 484, height: 560)
+    }
+}

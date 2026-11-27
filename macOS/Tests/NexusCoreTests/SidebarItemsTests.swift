@@ -4,12 +4,12 @@ import XCTest
 final class SidebarItemsTests: XCTestCase {
     func testMainGroupOrder() {
         XCTAssertEqual(sidebarItems(group: .main, badges: [:]).map(\.section),
-                       [.overview, .conversation, .notifications, .gallery, .files, .remote, .apps])
+                       [.overview, .conversation, .sms, .notifications, .gallery, .files, .remote, .apps])
     }
 
     func testComingSoonSectionsAreOnlyInSoonGroup() {
-        XCTAssertEqual(sidebarItems(group: .soon, badges: [:]).map(\.section), [.calls, .sms, .webcam])
-        XCTAssertTrue(Section.allCases.filter(\.isComingSoon).allSatisfy { [.calls, .sms, .webcam].contains($0) })
+        XCTAssertEqual(sidebarItems(group: .soon, badges: [:]).map(\.section), [.calls, .webcam])
+        XCTAssertTrue(Section.allCases.filter(\.isComingSoon).allSatisfy { [.calls, .webcam].contains($0) })
         XCTAssertEqual(sidebarItems(group: .footer, badges: [:]).map(\.section), [.devices, .settings])
         let listed = [SidebarGroup.main, .soon, .footer].flatMap { sidebarItems(group: $0, badges: [:]) }.map(\.section)
         XCTAssertFalse(listed.contains { $0.isComingSoon && sidebarItems(group: .main, badges: [:]).map(\.section).contains($0) })

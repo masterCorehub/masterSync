@@ -149,6 +149,12 @@ public struct Message: Codable {
     public var findPhone: Bool?
     public var deviceControls: Bool?
     public var code: String?
+    public var sms: Bool?
+    public var smsAccess: Bool?
+    public var smsThreads: [SmsThread]?
+    public var smsEntries: [SmsEntry]?
+    public var threadId: String?
+    public var address: String?
     public var control: String?
     public var enabled: Bool?
     public var torch: Bool?
@@ -161,6 +167,46 @@ public struct Message: Codable {
     public var quality: Int?
 
     public init(_ type: String) { self.type = type }
+}
+
+/// One SMS conversation, as the phone lists it.
+public struct SmsThread: Codable, Identifiable, Equatable {
+    public let id: String
+    public var address: String
+    public var name: String?
+    public var snippet: String
+    public var date: Int64
+    public var unread: Int
+    public var count: Int
+
+    public init(id: String, address: String, name: String?, snippet: String, date: Int64, unread: Int, count: Int) {
+        self.id = id
+        self.address = address
+        self.name = name
+        self.snippet = snippet
+        self.date = date
+        self.unread = unread
+        self.count = count
+    }
+}
+
+/// One text message.
+public struct SmsEntry: Codable, Identifiable, Equatable {
+    public let id: String
+    public let threadId: String
+    public let address: String
+    public let body: String
+    public let date: Int64
+    public let outgoing: Bool
+
+    public init(id: String, threadId: String, address: String, body: String, date: Int64, outgoing: Bool) {
+        self.id = id
+        self.threadId = threadId
+        self.address = address
+        self.body = body
+        self.date = date
+        self.outgoing = outgoing
+    }
 }
 
 public struct MediaQueueItem: Codable, Identifiable, Equatable {

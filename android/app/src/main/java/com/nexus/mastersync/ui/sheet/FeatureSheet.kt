@@ -73,6 +73,7 @@ fun FeatureSheet(feature: Feature, nexus: NexusController, actions: NexusActions
         StepAction.OpenAppSettings -> actions.openAppSettings()
         StepAction.OpenNotificationAccess -> actions.openNotificationAccess()
         StepAction.RequestGallery -> actions.requestGallery()
+        StepAction.RequestSms -> actions.requestSms()
         StepAction.ToggleBackground -> actions.toggleBackground()
         StepAction.EnableFiles -> nexus.update(options.copy(files = true))
     }
@@ -126,6 +127,7 @@ private fun setEnabled(id: FeatureId, on: Boolean, nexus: NexusController, o: Ne
     FeatureId.Mirror -> nexus.update(o.copy(mirror = on))
     FeatureId.Scan -> nexus.update(o.copy(remoteScan = on))
     FeatureId.FindPhone -> nexus.update(o.copy(findPhone = on))
+    FeatureId.Sms -> if (on) actions.requestSms() else nexus.update(o.copy(sms = false))
 }
 
 @Composable
@@ -237,6 +239,7 @@ private fun FeatureOptions(feature: Feature, nexus: NexusController, options: Ne
             LinkRow("Digitalizações", "$documentCount") { open(Subpage.Documents) }
         }
         FeatureId.FindPhone -> OptionsPanel { Muted("O celular toca alto mesmo no silencioso quando o Mac pedir.") }
+        FeatureId.Sms -> OptionsPanel { Muted("O Mac lê e responde seus SMS. Só texto: o RCS do Google Mensagens não aparece. Nada é guardado no Mac.") }
     }
 }
 

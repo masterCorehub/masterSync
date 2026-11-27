@@ -12,6 +12,7 @@ data class NexusActions(
     val openDndAccess: () -> Unit,
     val openAppSettings: () -> Unit,
     val requestGallery: () -> Unit,
+    val requestSms: () -> Unit,
     val approvePhoto: () -> Unit,
     val approveScreen: () -> Unit,
     val keyboardSettings: () -> Unit,

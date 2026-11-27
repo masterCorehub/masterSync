@@ -36,6 +36,7 @@ private fun readSystemAccess(context: Context): SystemAccess {
         mediaFull = mediaFull,
         mediaPartial = mediaPartial,
         appNotifications = NotificationManagerCompat.from(context).areNotificationsEnabled(),
-        notificationListener = context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context)
+        notificationListener = context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context),
+        sms = granted(Manifest.permission.READ_SMS) && granted(Manifest.permission.SEND_SMS)
     )
 }

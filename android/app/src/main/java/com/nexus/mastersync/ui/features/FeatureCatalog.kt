@@ -2,11 +2,11 @@ package com.nexus.mastersync.ui.features
 
 import com.nexus.mastersync.NexusController
 
-enum class FeatureId { Clipboard, Files, Gallery, Notifications, Mirror, Scan, FindPhone }
+enum class FeatureId { Clipboard, Files, Gallery, Notifications, Mirror, Scan, FindPhone, Sms }
 
 enum class StepState { Done, Pending, AwaitingMac }
 
-enum class StepAction { OpenAppSettings, OpenNotificationAccess, RequestGallery, ToggleBackground, EnableFiles }
+enum class StepAction { OpenAppSettings, OpenNotificationAccess, RequestGallery, RequestSms, ToggleBackground, EnableFiles }
 
 /** One thing a feature needs. [chip] is the short label shown on Home when this is the first missing step. */
 data class Requirement(val label: String, val chip: String, val hint: String?, val state: StepState,
@@ -22,7 +22,7 @@ data class Feature(val id: FeatureId, val title: String, val summary: String, va
                    val requirements: List<Requirement>, val status: FeatureStatus)
 
 data class SystemAccess(val camera: Boolean, val mediaFull: Boolean, val mediaPartial: Boolean,
-                        val appNotifications: Boolean, val notificationListener: Boolean)
+                        val appNotifications: Boolean, val notificationListener: Boolean, val sms: Boolean = false)
 
 fun buildFeatures(options: NexusController.Options, permissions: NexusController.Permissions,
                   connected: Boolean, background: Boolean, access: SystemAccess,
@@ -61,6 +61,10 @@ fun buildFeatures(options: NexusController.Options, permissions: NexusController
                 mac(permissions.notifications, "Celular → Notificações"),
                 appNotifications,
                 keepConnected(optional = false))) else null,
+        if (notificationRelay) feature(FeatureId.Sms, "SMS no Mac", "Leia e responda SMS pelo Mac", options.sms, listOf(
+            Requirement("Ler e enviar SMS", "Permitir SMS", "Configuração do Android", state(access.sms), StepAction.RequestSms),
+            mac(permissions.sms, "SMS"),
+            keepConnected(optional = false))) else null,
         feature(FeatureId.Mirror, "Espelhar tela", "Mostre a tela do celular no Mac", options.mirror, listOf(
             appNotifications, keepConnected(optional = false))),
         feature(FeatureId.Scan, "Digitalizar e câmera", "O Mac pede, o celular fotografa", options.remoteScan, listOf(

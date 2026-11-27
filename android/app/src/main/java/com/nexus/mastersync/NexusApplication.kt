@@ -52,12 +52,14 @@ class NexusController(val context: Context) {
         val mirror: Boolean = false,
         val findPhone: Boolean = false,
         val mediaControl: Boolean = false,
+        val sms: Boolean = false,
         val theme: String = "system",
         val blockedApps: Set<String> = emptySet()
     )
 
     data class Permissions(val clipboard: Boolean = false, val files: Boolean = false, val notifications: Boolean = false,
-        val gallery: Boolean = false, val clipboardImages: Boolean = false, val chat: Boolean = false)
+        val gallery: Boolean = false, val clipboardImages: Boolean = false, val chat: Boolean = false,
+        val sms: Boolean = false)
     data class CameraRequest(val peer: String, val id: String)
     data class MirrorRequest(val peer: String, val id: String, val size: Int, val fps: Int, val quality: Int)
     private data class Battery(val level: Int?, val charging: Boolean)
@@ -189,6 +191,7 @@ class NexusController(val context: Context) {
 
     val client = LocalClient(context) { peer, message -> main.launch { receive(peer, message) } }
     val transfers = TransferQueue(context, client::sendTo)
+    private val smsBridge = com.nexus.mastersync.services.SmsBridge(context, client::sendTo) { client.status.value.connected?.id }
     val scans = ScanLibrary(context)
     val gallery = RemoteGallery(context, { peer ->
         options.value.gallery && permissions.value.gallery && client.status.value.connected?.id == peer
@@ -275,6 +278,11 @@ class NexusController(val context: Context) {
         else client.suspendConnection()
     }
 
+    /** A text arrived on the phone (from the SMS receiver). */
+    fun smsIncoming(intent: android.content.Intent) {
+        if (options.value.sms) smsBridge.incoming(intent)
+    }
+
     fun update(next: Options) {
         require(next.theme in setOf("system", "light", "dark"))
         if (next.syncNewMedia && !settings.value.syncNewMedia) {
@@ -284,7 +292,7 @@ class NexusController(val context: Context) {
             .putBoolean("notification-mirror", next.notificationMirror).putBoolean("hide-notifications", next.hideNotifications)
             .putBoolean("remote-scan", next.remoteScan).putBoolean("auto-scan", next.autoScan)
             .putBoolean("gallery", next.gallery).putBoolean("mirror", next.mirror)
-            .putBoolean("find", next.findPhone).putBoolean("media-control", next.mediaControl).putString("theme", next.theme).putStringSet("blocked-apps", next.blockedApps).apply()
+            .putBoolean("find", next.findPhone).putBoolean("media-control", next.mediaControl).putBoolean("sms", next.sms).putString("theme", next.theme).putStringSet("blocked-apps", next.blockedApps).apply()
         settings.value = next
         if (!next.findPhone) actions.stop()
         if (!next.remoteScan && scanRequest.value != null) decideScan(false)
@@ -403,7 +411,7 @@ class NexusController(val context: Context) {
                 val noticeSyncChanged = supportsNoticeSync != message.optBoolean("noticeSync")
                 supportsNoticeSync = message.optBoolean("noticeSync")
                 val state = Permissions(message.optBoolean("clipboard"), message.optBoolean("files"),
-                    message.optBoolean("notifications"), message.optBoolean("gallery"), message.optBoolean("clipboardImages"), message.optBoolean("chat"))
+                    message.optBoolean("notifications"), message.optBoolean("gallery"), message.optBoolean("clipboardImages"), message.optBoolean("chat"), message.optBoolean("sms"))
                 val notificationsChanged = state.notifications != remote.value.notifications
                 if (state != remote.value) {
                     remote.value = state
@@ -459,6 +467,7 @@ class NexusController(val context: Context) {
                     }
                 }
             }
+            "smsThreadsRequest", "smsMessagesRequest", "smsSend" -> if (options.value.sms) smsBridge.receive(peer, message)
             "mediaStatusRequest" -> if (options.value.mediaControl) {
                 listener?.mediaStatus()?.let { client.sendTo(peer, it) }
             }
@@ -524,7 +533,7 @@ class NexusController(val context: Context) {
             .put("notifications", local.notificationMirror && listener != null).put("noticeSync", listener != null)
             .put("instantCamera", local.remoteScan && local.files).put("scanPaste", local.remoteScan && local.files).put("scanner", local.remoteScan && local.files).put("gallery", local.gallery && gallery.available()).put("mirror", local.mirror)
             .put("galleryRevision", 2).put("backgroundConnection", keepConnected.value).put("clipboardImages", local.clipboard)
-            .put("launcher", true).put("adbProof", true).put("chat", true).put("findPhone", local.findPhone).put("deviceControls", local.findPhone).put("mediaControl", local.mediaControl && listener != null))
+            .put("launcher", true).put("adbProof", true).put("chat", true).put("findPhone", local.findPhone).put("deviceControls", local.findPhone).put("smsAccess", local.sms && smsBridge.available()).put("mediaControl", local.mediaControl && listener != null))
     }
 
     private fun updateTransfers() {
@@ -560,6 +569,7 @@ class NexusController(val context: Context) {
         mirror = storage.getBoolean("mirror", false),
         findPhone = storage.getBoolean("find", false),
         mediaControl = storage.getBoolean("media-control", false),
+        sms = storage.getBoolean("sms", false),
         theme = storage.getString("theme", "system") ?: "system",
         blockedApps = storage.getStringSet("blocked-apps", emptySet()).orEmpty()
     )

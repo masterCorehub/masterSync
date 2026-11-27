@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Phone
@@ -51,6 +52,7 @@ fun FeatureId.icon(): ImageVector = when (this) {
     FeatureId.Mirror -> Icons.Default.Phone
     FeatureId.Scan -> Icons.Default.Search
     FeatureId.FindPhone -> Icons.Default.LocationOn
+    FeatureId.Sms -> Icons.Default.Email
 }
 
 @Composable

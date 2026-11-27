@@ -99,6 +99,12 @@ class MainActivity : ComponentActivity() {
         nexus.update(nexus.options.value.copy(gallery = permitted))
         if (!permitted) nexus.note("Selecione as fotos e os vídeos que o Mac pode ver.")
     }
+    private val smsAccess = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        val permitted = checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED &&
+            checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+        nexus.update(nexus.options.value.copy(sms = permitted))
+        if (!permitted) nexus.note("Sem a permissão de SMS o Mac não consegue ler nem enviar mensagens.")
+    }
     private val chooseFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { nexus.offerFile(it) }
     }
@@ -321,7 +327,7 @@ class MainActivity : ComponentActivity() {
             openAppSettings = {
                 startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
             },
-            requestGallery = ::requestGallery, approvePhoto = ::approveInstantCamera, approveScreen = ::requestScreen,
+            requestGallery = ::requestGallery, requestSms = ::requestSms, approvePhoto = ::approveInstantCamera, approveScreen = ::requestScreen,
             keyboardSettings = { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
             chooseKeyboard = { getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
             scan = { openDocumentCamera() }, advancedScan = { openScanner() },
@@ -395,6 +401,11 @@ class MainActivity : ComponentActivity() {
             arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
         } else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
         galleryAccess.launch(permissions)
+    }
+
+    private fun requestSms() {
+        smsAccess.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.READ_CONTACTS))
     }
 
     private fun notificationAccess() = startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))

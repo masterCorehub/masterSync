@@ -11,7 +11,9 @@ struct Sidebar: View {
 
     private var palette: NexusPalette { NexusPalette(scheme: scheme) }
 
-    private var badges: [Section: Int] { [.notifications: model.notifications.notices.filter { $0.peer == model.selected?.id }.count] }
+    private var badges: [Section: Int] {
+        [.notifications: model.notifications.notices.filter { $0.peer == model.selected?.id }.count, .sms: model.sms.unreadTotal]
+    }
 
     var body: some View {
         // The column fits when the window is tall enough; otherwise it scrolls.

@@ -13,7 +13,7 @@ enum Section: String, CaseIterable, Identifiable {
     case remote = "Controle remoto"
     case apps = "Apps"
     case calls = "Chamadas"
-    case sms = "SMS e RCS"
+    case sms = "SMS"
     case webcam = "Webcam"
     case devices = "Dispositivos"
     case settings = "Configurações"
@@ -21,7 +21,7 @@ enum Section: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     /// Chamadas, SMS e Webcam have a place in the menu but no feature behind them yet.
-    var isComingSoon: Bool { self == .calls || self == .sms || self == .webcam }
+    var isComingSoon: Bool { self == .calls || self == .webcam }
 
     var title: String {
         switch self {
@@ -42,7 +42,7 @@ enum Section: String, CaseIterable, Identifiable {
         case .remote: "Controle o celular pelo Mac"
         case .apps: "Abra os apps do celular no Mac"
         case .calls: "Atenda e ligue pelo Mac"
-        case .sms: "Mensagens do celular no Mac"
+        case .sms: "Leia e responda SMS pelo Mac"
         case .webcam: "A câmera do celular como webcam"
         case .devices: "Celulares conectados e pareamento"
         case .settings: "Aparência, atalhos e conexão"
@@ -104,7 +104,7 @@ final class NexusModel: ObservableObject {
     @Published private(set) var permissions: [String: Message] = [:]
     @Published var selectedID: String? {
         didSet {
-            if oldValue != selectedID { screen.endAll(); screen.stopUSB() }
+            if oldValue != selectedID { screen.endAll(); screen.stopUSB(); sms.reset() }
             advertiseCapabilities()
         }
     }
@@ -214,6 +214,8 @@ final class NexusModel: ObservableObject {
     let screen = ScreenMirror()
     let files: FileTransfers
     let pixelFiles = PixelFilesModel()
+    let sms = SmsModel()
+    private var smsChanges: AnyCancellable?
     private var pixelSerial: String?
     private var codePopup = CodePopupController()
     @Published var codeAutofill = UserDefaults.standard.object(forKey: "code-autofill") as? Bool ?? true {
@@ -277,6 +279,12 @@ final class NexusModel: ObservableObject {
         screen.send = { [weak self] in self?.server?.send($1, to: $0) }
         gallery.send = { [weak self] in self?.server?.send($1, to: $0) }
         configurePixelFiles()
+        // The side bar's unread badge follows the SMS model.
+        smsChanges = sms.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        sms.send = { [weak self] message in
+            guard let self, let peer = selected?.id, smsAvailable else { return }
+            server?.send(message, to: peer)
+        }
         notifications.didFindCode = { [weak self] code, app in self?.receiveCode(code, from: app) }
         files.didReceive = { [weak self] file in
             self?.openIfAsked(file)
@@ -1166,6 +1174,8 @@ final class NexusModel: ObservableObject {
             if peer == clipboardImagePeer && canClipboard(peer) && message.sensitive != true {
                 clipboardImages.receive(message)
             }
+        case "smsThreads", "smsMessages", "smsSendStatus", "smsReceived", "smsStatus":
+            if peer == selected?.id, permissions[peer]?.smsAccess == true || message.type == "smsStatus" { sms.receive(message) }
         case "deviceControlsState":
             if permissions[peer]?.deviceControls == true { deviceControlStates[peer] = message }
         case "dndState":
@@ -1240,6 +1250,9 @@ final class NexusModel: ObservableObject {
     // MARK: Quick controls (torch, ringer, lock, hotspot)
 
     @Published private(set) var deviceControlStates: [String: Message] = [:]
+
+    /// The phone's SMS sharing is on and allowed: the SMS screen can read and answer.
+    var smsAvailable: Bool { active && selected.map { permissions[$0.id]?.smsAccess == true } == true }
 
     var deviceControlsAvailable: Bool { selected.map { permissions[$0.id]?.deviceControls == true } ?? false }
 
@@ -1325,6 +1338,7 @@ final class NexusModel: ObservableObject {
         state.notifications = notificationsEnabled
         state.noticeSync = true
         state.gallery = galleryEnabled && selected?.id == peer
+        state.sms = selected?.id == peer
         server?.send(state, to: peer)
     }
 

@@ -64,6 +64,10 @@ struct Dashboard: View {
                         .padding(.horizontal, 26)
                         .padding(.bottom, 26)
                         .onChange(of: model.selected?.id) { _, _ in chatDraft = "" }
+                } else if model.section == .sms {
+                    SmsScreen(model: model, sms: model.sms)
+                        .padding(.horizontal, 26)
+                        .padding(.bottom, 26)
                 } else {
                     dashboardContent
                 }
@@ -211,7 +215,8 @@ struct Dashboard: View {
                         case .remote: remote
                         case .settings: settings.frame(maxWidth: 760, alignment: .leading)
                         case .apps: appsScreen
-                        case .calls, .sms, .webcam: ComingSoonView(section: model.section)
+                        case .sms: EmptyView()
+                        case .calls, .webcam: ComingSoonView(section: model.section)
                         }
                     }
                     .padding(.horizontal, 26)

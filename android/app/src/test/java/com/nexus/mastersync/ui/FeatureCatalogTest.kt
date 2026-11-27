@@ -17,11 +17,11 @@ import org.junit.Test
 
 class FeatureCatalogTest {
     private val allOn = Options(clipboard = true, files = true, notificationMirror = true, remoteScan = true,
-        autoScan = true, gallery = true, syncNewMedia = true, mirror = true, findPhone = true, mediaControl = true)
+        autoScan = true, gallery = true, syncNewMedia = true, mirror = true, findPhone = true, mediaControl = true, sms = true)
     private val perms = Permissions(clipboard = true, files = true, notifications = true, gallery = true,
-        clipboardImages = true, chat = true)
+        clipboardImages = true, chat = true, sms = true)
     private val access = SystemAccess(camera = true, mediaFull = true, mediaPartial = true,
-        appNotifications = true, notificationListener = true)
+        appNotifications = true, notificationListener = true, sms = true)
 
     private fun feature(id: FeatureId, options: Options, connected: Boolean = true, background: Boolean = true,
                         perms: Permissions = this.perms, access: SystemAccess = this.access): Feature =
@@ -31,8 +31,26 @@ class FeatureCatalogTest {
         assertTrue(buildFeatures(allOn, perms, true, true, access, notificationRelay = false)
             .none { it.id == FeatureId.Notifications })
 
-    @Test fun fullEditionListsAllSevenFeatures() =
-        assertEquals(7, buildFeatures(allOn, perms, true, true, access, notificationRelay = true).size)
+    @Test fun fullEditionListsAllEightFeatures() =
+        assertEquals(8, buildFeatures(allOn, perms, true, true, access, notificationRelay = true).size)
+
+    @Test fun directEditionHasNoSmsFeature() =
+        assertTrue(buildFeatures(allOn, perms, true, true, access, notificationRelay = false).none { it.id == FeatureId.Sms })
+
+    @Test fun smsFirstPendingIsThePermission() {
+        val s = feature(FeatureId.Sms, allOn, access = access.copy(sms = false)).status as FeatureStatus.Pending
+        assertEquals(StepAction.RequestSms, s.requirement.action)
+        assertEquals("Permitir SMS", s.requirement.chip)
+    }
+
+    @Test fun smsNeedsTheMacSideSwitchToo() {
+        val s = feature(FeatureId.Sms, allOn, perms = perms.copy(sms = false)).status as FeatureStatus.Pending
+        assertEquals("Ligar no Mac", s.requirement.chip)
+        assertEquals("No Mac: SMS", s.requirement.hint)
+    }
+
+    @Test fun smsIsOffUntilTheUserTurnsItOn() =
+        assertEquals(FeatureStatus.Off, feature(FeatureId.Sms, allOn.copy(sms = false)).status)
 
     @Test fun everythingGrantedIsActive() =
         assertTrue(buildFeatures(allOn, perms, true, true, access, true).all { it.status == FeatureStatus.Active })
