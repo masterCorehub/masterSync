@@ -24,10 +24,11 @@ final class ShellRenderTests: XCTestCase {
 
     func render<V: View>(_ view: V, name: String, scheme: ColorScheme, width: CGFloat, height: CGFloat) throws -> NSImage {
         let palette = NexusPalette(scheme: scheme)
-        let framed = view.frame(width: width, height: height).background(palette.canvas)
+        let framed = view.frame(width: width, height: height, alignment: .top).background(palette.canvas)
             .environment(\.colorScheme, scheme).environment(\.nexusFlatBackdrop, true).foregroundStyle(palette.ink)
         let renderer = ImageRenderer(content: framed)
-        renderer.scale = 1
+        // NEXUS_RENDER_SCALE=2 makes sharper pictures (used for the README images).
+        renderer.scale = Double(ProcessInfo.processInfo.environment["NEXUS_RENDER_SCALE"] ?? "") ?? 1
         let image = try XCTUnwrap(renderer.nsImage, "\(name) não renderizou")
         XCTAssertGreaterThan(Self.distinctColors(in: image), 20, "\(name) saiu em branco (ScrollView não aparece no ImageRenderer)")
         try? FileManager.default.createDirectory(atPath: Self.outputDirectory, withIntermediateDirectories: true)
@@ -62,7 +63,31 @@ final class ShellRenderTests: XCTestCase {
             name: "Pixel 9 Pro", active: connected, battery: connected ? 82 : nil, charging: connected,
             controls: QuickControls.items(QuickControls.Inputs(phoneName: "Pixel 9 Pro", online: connected, dndAllowed: true, dndEnabled: false,
                 canFind: true, controlsAvailable: true, torch: false, torchAvailable: true, ringer: "normal", hasADB: connected)),
-            notices: [], recent: connected ? (0..<5).map { OverviewPhoto(id: "\($0)", image: nil, isVideo: $0 == 3) } : [])
+            notices: connected ? sampleNotices() : [], recent: connected ? (0..<5).map { OverviewPhoto(id: "\($0)", image: gradient($0), isVideo: $0 == 3) } : [])
+    }
+
+    private func gradient(_ index: Int) -> NSImage {
+        let image = NSImage(size: NSSize(width: 160, height: 160))
+        image.lockFocus()
+        NSGradient(colors: [NSColor(hue: CGFloat(index * 2 % 9) / 9, saturation: 0.45, brightness: 0.85, alpha: 1), NSColor(hue: CGFloat(index * 2 % 9) / 9, saturation: 0.6, brightness: 0.3, alpha: 1)])?
+            .draw(in: NSRect(x: 0, y: 0, width: 160, height: 160), angle: 90)
+        image.unlockFocus()
+        return image
+    }
+
+    /// Made-up notifications for the pictures in the README; nothing here comes from a real phone.
+    private func sampleNotices() -> [NotificationSync.Notice] {
+        let now = Date.now
+        func notice(_ id: String, _ app: String, _ group: String, _ title: String, _ body: String, _ minutes: Double) -> NotificationSync.Notice {
+            NotificationSync.Notice(id: id, peer: "p", remoteID: id, app: app, group: group, title: title, body: body,
+                                    date: now.addingTimeInterval(-minutes * 60), canReply: true, canDismiss: true, icon: nil)
+        }
+        return [
+            notice("1", "WhatsApp", "com.whatsapp", "Rafa", "Bora no futebol quinta? Tô montando o time", 3),
+            notice("2", "Google Agenda", "com.google.calendar", "Revisão de design em 30 min", "Sala 3B · Google Meet", 28),
+            notice("3", "Nubank", "com.nu.production", "Pix recebido", "Você recebeu R$ 120,00 de Júlia Martins", 62),
+            notice("4", "Gmail", "com.google.gmail", "Ana Souza", "Re: Assets finais — tudo aprovado pelo cliente", 95),
+        ]
     }
 
     func testOverviewRendersConnectedAndDisconnected() throws {
@@ -151,9 +176,10 @@ final class ShellRenderTests: XCTestCase {
         let image = try render(Sidebar(model: model, pinnedApps: [], openApp: { _ in }, manageApps: {}),
                                name: "barra-lateral-pequena", scheme: .dark, width: 244, height: 570)
         // The footer sits in the bottom 60 points; it must have drawn something other than the flat background there.
-        let bottom = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
-            .cropping(to: CGRect(x: 0, y: bottom(of: image) - 60, width: 244, height: 60))
-        XCTAssertGreaterThan(Self.distinctColors(in: NSImage(cgImage: try XCTUnwrap(bottom), size: NSSize(width: 244, height: 60))), 12)
+        let cg = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let scale = CGFloat(cg.width) / 244
+        let bottom = try XCTUnwrap(cg.cropping(to: CGRect(x: 0, y: CGFloat(cg.height) - 60 * scale, width: CGFloat(cg.width), height: 60 * scale)))
+        XCTAssertGreaterThan(Self.distinctColors(in: NSImage(cgImage: bottom, size: NSSize(width: 244, height: 60))), 12)
     }
 
     private func bottom(of image: NSImage) -> Int { Int(image.size.height) }
