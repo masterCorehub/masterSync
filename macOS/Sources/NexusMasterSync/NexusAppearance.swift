@@ -3,22 +3,59 @@ import SwiftUI
 struct NexusPalette {
     let scheme: ColorScheme
 
-    var canvas: Color { tone(0x191412, 0xF5EEE6) }
-    var surface: Color { tone(0x2F2521, 0xFFF9F2) }
-    var control: Color { tone(0x392E28, 0xECE0D3) }
-    var border: Color { tone(0x59453B, 0xDED0C2) }
-    var ink: Color { tone(0xF5ECE3, 0x281C16) }
-    var muted: Color { tone(0xC4B1A3, 0x635046) }
-    var accent: Color { tone(0xF3BB7D, 0x8A4925) }
-    var accentInk: Color { tone(0x27180F, 0xFFF8F0) }
-    var accentSurface: Color { tone(0x473225, 0xF2E0CB) }
-    var connected: Color { tone(0xA6CD9E, 0x386342) }
+    // Window and text. `canvas` is the opaque stand-in for the glass, used when transparency is reduced and for contrast checks.
+    var canvas: Color { tone(0x161820, 0xF4F6F9) }
+    var ink: Color { tone(0xF3F4F6, 0x14161B) }
+    var muted: Color { tone(0xA3A5A9, 0x696B6F) }
+    var faint: Color { tone(0x77797E, 0x8F9195) }
 
-    private func tone(_ dark: UInt32, _ light: UInt32) -> Color {
-        let rgb = scheme == .dark ? dark : light
+    // Glass surfaces, translucent so the window material shows through.
+    var panel: Color { tone(0xFFFFFF, 0xFFFFFF, darkAlpha: 0.06, lightAlpha: 0.50) }
+    var panel2: Color { tone(0xFFFFFF, 0xFFFFFF, darkAlpha: 0.11, lightAlpha: 0.80) }
+    var line: Color { tone(0xFFFFFF, 0x141820, darkAlpha: 0.09, lightAlpha: 0.08) }
+    var edge: Color { tone(0xFFFFFF, 0xFFFFFF, darkAlpha: 0.16, lightAlpha: 0.75) }
+    var active: Color { tone(0xFFFFFF, 0xFFFFFF, darkAlpha: 0.12, lightAlpha: 0.75) }
+    var track: Color { tone(0xFFFFFF, 0x141820, darkAlpha: 0.16, lightAlpha: 0.14) }
+    var input: Color { tone(0xFFFFFF, 0xFFFFFF, darkAlpha: 0.07, lightAlpha: 0.60) }
+    var side: Color { tone(0xFFFFFF, 0xFFFFFF, darkAlpha: 0.035, lightAlpha: 0.25) }
+    var windowTint: Color { tone(0x161820, 0xFAFBFD, darkAlpha: 0.30, lightAlpha: 0.42) }
+
+    // Teal accent. `accent` is for text and icons on the glass; `fill` is for buttons, with `accentInk` on top.
+    var accent: Color { tone(0x5ED8A9, 0x007950) }
+    var fill: Color { tone(0x0BC18D, 0x0BC18D) }
+    var accentInk: Color { tone(0x06130D, 0x06130D) }
+    var accentSurface: Color { tone(0x0BC18D, 0x0BC18D, darkAlpha: 0.18, lightAlpha: 0.18) }
+    var secondary: Color { tone(0x6BA4FF, 0x3461AC) }
+    var connected: Color { accent }
+
+    // Names kept from the previous palette so existing screens move to the new look together.
+    var surface: Color { panel }
+    var control: Color { panel2 }
+    var border: Color { edge }
+
+    private func tone(_ dark: UInt32, _ light: UInt32, darkAlpha: Double = 1, lightAlpha: Double = 1) -> Color {
+        let isDark = scheme == .dark
+        let rgb = isDark ? dark : light
         return Color(red: Double((rgb >> 16) & 255) / 255,
                      green: Double((rgb >> 8) & 255) / 255,
-                     blue: Double(rgb & 255) / 255)
+                     blue: Double(rgb & 255) / 255,
+                     opacity: isDark ? darkAlpha : lightAlpha)
+    }
+
+    /// sRGB components, so tests and contrast checks can compare colors.
+    static func rgba(_ color: Color) -> [Double] {
+        let resolved = NSColor(color).usingColorSpace(.sRGB) ?? .black
+        return [resolved.redComponent, resolved.greenComponent, resolved.blueComponent, resolved.alphaComponent].map { Double($0) }
+    }
+
+    /// WCAG contrast ratio between two colors (alpha is ignored; pass opaque colors).
+    static func contrast(_ a: Color, _ b: Color) -> Double {
+        func luminance(_ color: Color) -> Double {
+            let c = rgba(color).prefix(3).map { $0 <= 0.03928 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
+            return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+        }
+        let (x, y) = (luminance(a), luminance(b))
+        return (max(x, y) + 0.05) / (min(x, y) + 0.05)
     }
 }
 
@@ -29,13 +66,16 @@ struct NexusBackdrop: View {
     var body: some View {
         let palette = NexusPalette(scheme: scheme)
         ZStack {
-            palette.canvas
-            if !reduceTransparency {
-                // Warm light stays at the window edges so the text has a steady backdrop.
-                RadialGradient(colors: [palette.accent.opacity(scheme == .dark ? 0.145 : 0.09), .clear],
-                               center: .init(x: 0.82, y: 0.11), startRadius: 0, endRadius: 540)
-                RadialGradient(colors: [palette.accent.opacity(0.055), .clear],
-                               center: .bottomLeading, startRadius: 12, endRadius: 470)
+            if reduceTransparency {
+                palette.canvas
+            } else {
+                GlassBackground()
+                // Two soft color blobs behind the glass, as in the design.
+                Circle().fill(palette.fill.opacity(scheme == .dark ? 0.30 : 0.38)).frame(width: 420, height: 420)
+                    .blur(radius: 70).offset(x: -360, y: 170)
+                Circle().fill(palette.secondary.opacity(scheme == .dark ? 0.30 : 0.38)).frame(width: 360, height: 360)
+                    .blur(radius: 80).offset(x: 360, y: -190)
+                palette.windowTint
             }
         }.ignoresSafeArea().accessibilityHidden(true)
     }
@@ -65,7 +105,7 @@ struct NexusPillStyle: ButtonStyle {
         private var filled: Bool { prominent || selected }
 
         private func background(in palette: NexusPalette) -> Color {
-            if filled { return palette.accent }
+            if filled { return palette.fill }
             if hovered { return palette.control }
             return segmented ? .clear : palette.control.opacity(0.72)
         }
@@ -91,7 +131,7 @@ struct NexusPillStyle: ButtonStyle {
 extension View {
     func nexusPanel(_ palette: NexusPalette, radius: CGFloat = 19, highlighted: Bool = false) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        return background(highlighted ? palette.accentSurface : palette.surface, in: shape)
-            .overlay { shape.strokeBorder(highlighted ? palette.accent.opacity(0.52) : palette.border.opacity(0.65)) }
+        return background(highlighted ? palette.accentSurface : palette.panel, in: shape)
+            .overlay { shape.strokeBorder(highlighted ? palette.accent.opacity(0.52) : palette.line) }
     }
 }

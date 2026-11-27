@@ -163,7 +163,7 @@ struct MediaPlayerCard: View {
             Button { onCommand(playing ? "pause" : "play") } label: {
                 Image(systemName: playing ? "pause.fill" : "play.fill").font(.title3)
                     .foregroundStyle(palette.accentInk).frame(width: 46, height: 46)
-                    .background(palette.accent, in: Circle())
+                    .background(palette.fill, in: Circle())
             }
             .buttonStyle(.plain).disabled(!canControl)
             .help(playing ? "Pausar" : "Reproduzir").accessibilityLabel(playing ? "Pausar" : "Reproduzir")

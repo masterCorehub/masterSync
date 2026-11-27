@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..24,300..500,0..1,0&amp;display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#000;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:oklch(0.72 0.15 165)}a:hover{color:oklch(0.82 0.13 165)}
+.ms{font-family:"Material Symbols Rounded";font-weight:400;font-style:normal;font-size:18px;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;font-feature-settings:"liga"}
+input{font:inherit;color:inherit;background:transparent;border:0;outline:0}
+input::placeholder{color:currentColor;opacity:.45}
+.btn{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:default;text-align:inherit}
+.btn:focus-visible{outline:2px solid oklch(0.72 0.15 165);outline-offset:2px}
+@keyframes msToast{from{opacity:0;transform:translateX(40px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes msPop{from{opacity:0;transform:translateY(-6px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes msDrop{from{opacity:0;transform:translateY(-20px) scale(.95)}to{opacity:1;transform:none}}
+@keyframes msFade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes msPulse{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes msRing{0%{box-shadow:0 0 0 0 oklch(0.72 0.15 165 / .7)}100%{box-shadow:0 0 0 22px oklch(0.72 0.15 165 / 0)}}
+@keyframes msDot{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-4px);opacity:1}}
+@keyframes msDash{to{background-position:40px 0}}
+::-webkit-scrollbar{width:0;height:0}
+</style>
+</helmet>
+
+<div onDragOver="{{ onDragOver }}" onDragLeave="{{ onDragLeave }}" onDrop="{{ onDrop }}" style="position:fixed;inset:0;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center">
+<div style="position:relative;width:1440px;height:900px;flex-shrink:0;overflow:hidden;transform:scale({{ scale }});color:{{ t.fg }};transition:color .4s">
+
+  <div style="position:absolute;inset:0;background:{{ t.wall }};transition:background .6s"></div>
+  <div style="position:absolute;left:180px;top:420px;width:420px;height:420px;border-radius:50%;background:oklch(0.72 0.15 165 / .45);filter:blur(60px)"></div>
+  <div style="position:absolute;right:160px;top:120px;width:360px;height:360px;border-radius:50%;background:oklch(0.72 0.15 260 / .45);filter:blur(70px)"></div>
+
+  <!-- MENU BAR -->
+  <div style="position:absolute;top:0;left:0;right:0;height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:{{ t.menubar }};backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%);font-size:13px;z-index:20">
+    <div style="display:flex;align-items:center;gap:20px">
+      <span class="ms" style="font-size:16px">sync_alt</span>
+      <span style="font-weight:700">MasterSync</span>
+      <span>Arquivo</span><span>Editar</span><span>Dispositivo</span><span>Janela</span><span>Ajuda</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px">
+      <button class="btn" onClick="{{ mp.menuToggle }}" aria-label="{{ mp.menuLabel }}" title="{{ mp.menuLabel }}" style="display:flex;align-items:center;gap:6px;max-width:190px;padding:3px 9px;border-radius:6px;background:{{ mp.menuBg }}">
+        <span class="ms" style="font-size:16px;color:{{ mp.menuIc }}">{{ mp.menuIcon }}</span>
+        <span style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ mp.title }}</span>
+      </button>
+      <div onClick="{{ togglePopover }}" style="display:flex;align-items:center;gap:6px;padding:3px 9px;border-radius:6px;cursor:default;background:{{ popBtnBg }}">
+        <span class="ms" style="font-size:16px">phone_android</span>
+        <span style="font-size:12px;font-weight:500">{{ battery }}%</span>
+      </div>
+      <span class="ms" style="font-size:16px">wifi</span>
+      <span class="ms" style="font-size:16px">search</span>
+      <span style="white-space:nowrap">qui. 26 de nov.  {{ clock }}</span>
+    </div>
+  </div>
+
+  <!-- WINDOW -->
+  <div style="position:absolute;left:100px;top:56px;width:1240px;height:764px;border-radius:24px;overflow:hidden;display:flex;flex-direction:{{ winDir }};background:{{ t.win }};backdrop-filter:blur(44px) saturate(190%);-webkit-backdrop-filter:blur(44px) saturate(190%);border:1px solid {{ t.edge }};box-shadow:{{ t.shadow }};transition:background .5s">
+
+    <!-- Layout A: sidebar -->
+    <sc-if value="{{ isA }}" hint-placeholder-val="{{ true }}">
+      <div style="width:244px;flex-shrink:0;display:flex;flex-direction:column;gap:14px;padding:16px 12px;background:{{ t.side }};border-right:1px solid {{ t.line }}">
+        <div style="display:flex;gap:8px;padding:2px 6px 4px">
+          <div style="width:12px;height:12px;border-radius:50%;background:#ff5f57"></div>
+          <div style="width:12px;height:12px;border-radius:50%;background:#febc2e"></div>
+          <div style="width:12px;height:12px;border-radius:50%;background:#28c840"></div>
+        </div>
+        <div style="padding:14px;border-radius:16px;background:{{ t.panel }};border:1px solid {{ t.line }};display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:34px;height:56px;border-radius:9px;border:1.5px solid {{ t.fg3 }};display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px;box-sizing:border-box"><div style="width:12px;height:2px;border-radius:2px;background:{{ t.fg3 }}"></div></div>
+            <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+              <span style="font-size:14px;font-weight:600">Pixel 9 Pro</span>
+              <span style="font-size:11.5px;display:flex;align-items:center;gap:6px;color:{{ t.acc }}"><span style="width:6px;height:6px;border-radius:50%;background:oklch(0.72 0.15 165);animation:msPulse 2.4s infinite"></span>Conectado · Wi‑Fi</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;justify-content:space-between;font-size:11.5px;color:{{ t.fg2 }}"><span>Bateria</span><span>{{ battery }}% · carregando</span></div>
+            <div style="height:5px;border-radius:3px;background:{{ t.track }};overflow:hidden"><div style="height:100%;width:{{ batteryW }};border-radius:3px;background:oklch(0.72 0.15 165);transition:width 1s"></div></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <sc-for list="{{ nav }}" as="n" hint-placeholder-count="8">
+            <div onClick="{{ n.go }}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;font-size:13.5px;cursor:default;background:{{ n.bg }};font-weight:{{ n.w }};transition:background .2s">
+              <span class="ms" style="font-size:19px;color:{{ n.ic }}">{{ n.icon }}</span>
+              <span style="flex:1">{{ n.label }}</span>
+              <sc-if value="{{ n.badge }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px;background:oklch(0.72 0.15 165);color:#06130d">{{ n.badge }}</span></sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div style="margin-top:auto;display:flex;flex-direction:column;gap:8px;padding:0 4px">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:{{ t.fg2 }};text-transform:uppercase;letter-spacing:.07em;font-weight:600"><span class="ms" style="font-size:14px">push_pin</span>Apps fixados</span><button class="btn" onClick="{{ goApps }}" style="font-size:11.5px;color:{{ t.acc }}">Editar</button></div>
+          <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px">
+            <sc-for list="{{ pinnedSide }}" as="a" hint-placeholder-count="5">
+              <button class="btn" onClick="{{ a.open }}" title="{{ a.name }}" aria-label="{{ a.openLabel }}" style="position:relative;aspect-ratio:1;border-radius:11px;background:{{ a.color }};display:flex;align-items:center;justify-content:center;box-shadow:{{ a.ring }};transition:transform .15s" style-hover="transform:translateY(-2px)"><span class="ms" style="font-size:19px;color:#fff">{{ a.icon }}</span></button>
+            </sc-for>
+          </div>
+          <sc-if value="{{ noPinned }}" hint-placeholder-val="{{ false }}"><span style="font-size:11.5px;color:{{ t.fg2 }}">Nenhum app fixado.</span></sc-if>
+        </div>
+        <div style="padding:12px;border-radius:14px;background:{{ t.panel }};border:1px solid {{ t.line }};display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:{{ t.fg2 }};text-transform:uppercase;letter-spacing:.07em;font-weight:600"><span class="ms" style="font-size:14px">content_paste</span>Área de transferência</div>
+          <div style="font-size:12.5px;line-height:1.4">{{ clip }}</div>
+          <div style="font-size:11px;color:{{ t.fg3 }}">Copiado no Pixel · há 1 min</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- Layout B: floating tabs -->
+    <sc-if value="{{ isB }}" hint-placeholder-val="{{ false }}">
+      <div style="height:64px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid {{ t.line }}">
+        <div style="display:flex;gap:8px;width:220px">
+          <div style="width:12px;height:12px;border-radius:50%;background:#ff5f57"></div>
+          <div style="width:12px;height:12px;border-radius:50%;background:#febc2e"></div>
+          <div style="width:12px;height:12px;border-radius:50%;background:#28c840"></div>
+        </div>
+        <div style="display:flex;gap:4px;padding:4px;border-radius:14px;background:{{ t.panel }};border:1px solid {{ t.line }}">
+          <sc-for list="{{ nav }}" as="n" hint-placeholder-count="8">
+            <div onClick="{{ n.go }}" title="{{ n.label }}" style="position:relative;display:flex;align-items:center;gap:7px;height:34px;padding:0 11px;border-radius:10px;font-size:13px;font-weight:600;cursor:default;background:{{ n.bgB }};box-shadow:{{ n.sh }};transition:all .25s">
+              <span class="ms" style="font-size:19px;color:{{ n.ic }}">{{ n.icon }}</span>
+              <sc-if value="{{ n.active }}" hint-placeholder-val="{{ false }}"><span style="animation:msFade .25s">{{ n.label }}</span></sc-if>
+              <sc-if value="{{ n.dot }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:6px;right:7px;width:7px;height:7px;border-radius:50%;background:oklch(0.72 0.15 165)"></span></sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div style="width:220px;display:flex;justify-content:flex-end">
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 12px 6px 8px;border-radius:12px;background:{{ t.panel }};border:1px solid {{ t.line }}">
+            <span style="width:7px;height:7px;border-radius:50%;background:oklch(0.72 0.15 165);animation:msPulse 2.4s infinite"></span>
+            <span style="font-size:12.5px;font-weight:600">Pixel 9 Pro</span>
+            <span style="font-size:12px;color:{{ t.fg2 }}">{{ battery }}%</span>
+            <span class="ms" style="font-size:16px;color:{{ t.acc }}">battery_charging_80</span>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- CONTENT -->
+    <div style="position:relative;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column">
+      <div style="height:58px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 26px">
+        <span style="font-size:20px;font-weight:700;letter-spacing:-.01em">{{ title }}</span>
+        <span style="font-size:12.5px;color:{{ t.fg2 }}">{{ subtitle }}</span>
+      </div>
+      <div style="flex:1;min-height:0;overflow:auto;padding:4px 26px 26px;display:flex;flex-direction:column">
+
+        <!-- OVERVIEW -->
+        <sc-if value="{{ is.overview }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid;grid-template-columns:290px minmax(0,1fr) minmax(0,1fr);gap:16px;animation:msFade .35s">
+            <div style="grid-row:1 / span 2;padding:18px;border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};display:flex;flex-direction:column;gap:16px">
+              <div style="height:210px;border-radius:14px;background:repeating-linear-gradient(135deg,{{ t.s1 }} 0 8px,{{ t.s2 }} 8px 16px);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ t.fg3 }}">foto do aparelho</div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span style="font-size:18px;font-weight:700">Pixel 9 Pro</span>
+                <span style="font-size:12.5px;color:{{ t.acc }};display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:oklch(0.72 0.15 165);animation:msPulse 2.4s infinite"></span>Conectado via Wi‑Fi · 6 ms</span>
+              </div>
+              <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:44px;font-weight:700;letter-spacing:-.03em">{{ battery }}%</span><span style="font-size:12.5px;color:{{ t.fg2 }};white-space:nowrap">cheio às 15:10</span></div>
+              <div style="height:6px;border-radius:3px;background:{{ t.track }};overflow:hidden;margin-top:-8px"><div style="height:100%;width:{{ batteryW }};border-radius:3px;background:oklch(0.72 0.15 165);transition:width 1s"></div></div>
+              <div style="display:flex;flex-direction:column;border-top:1px solid {{ t.line }}">
+                <sc-for list="{{ stats }}" as="s" hint-placeholder-count="3">
+                  <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid {{ t.line }};font-size:12.5px"><span style="color:{{ t.fg2 }}">{{ s.k }}</span><span style="font-weight:500">{{ s.v }}</span></div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="grid-column:2 / span 2;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">
+              <sc-for list="{{ quick }}" as="q" hint-placeholder-count="4">
+                <div onClick="{{ q.go }}" style="padding:16px;border-radius:18px;background:{{ t.panel }};border:1px solid {{ t.line }};display:flex;flex-direction:column;gap:14px;cursor:default;transition:transform .2s,background .2s" style-hover="transform:translateY(-2px)">
+                  <div style="width:38px;height:38px;border-radius:12px;background:oklch(0.72 0.15 165 / .18);display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:21px;color:{{ t.acc }}">{{ q.icon }}</span></div>
+                  <div style="display:flex;flex-direction:column;gap:3px"><span style="font-size:14px;font-weight:600">{{ q.label }}</span><span style="font-size:12px;color:{{ t.fg2 }}">{{ q.sub }}</span></div>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="padding:16px;border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};display:flex;flex-direction:column;gap:4px">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:6px"><span style="font-size:13px;font-weight:700">Notificações</span><span onClick="{{ goNotifs }}" style="font-size:12px;color:{{ t.acc }};cursor:default">Ver todas</span></div>
+              <sc-for list="{{ notifsTop }}" as="n" hint-placeholder-count="3">
+                <div style="display:flex;gap:10px;padding:8px 0;border-top:1px solid {{ t.line }}">
+                  <div style="width:30px;height:30px;border-radius:9px;flex-shrink:0;background:{{ n.color }};color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ n.ini }}</div>
+                  <div style="min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px;font-weight:600">{{ n.title }}</span><span style="font-size:12px;color:{{ t.fg2 }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ n.body }}</span></div>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="padding:16px;border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};display:flex;flex-direction:column;gap:4px">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:6px"><span style="font-size:13px;font-weight:700">Mensagens</span><span onClick="{{ goMessages }}" style="font-size:12px;color:{{ t.acc }};cursor:default">Abrir</span></div>
+              <sc-for list="{{ convTop }}" as="c" hint-placeholder-count="3">
+                <div onClick="{{ c.open }}" style="display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid {{ t.line }};cursor:default">
+                  <div style="width:30px;height:30px;border-radius:50%;flex-shrink:0;background:{{ c.color }};color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ c.ini }}</div>
+                  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px;font-weight:600">{{ c.name }}</span><span style="font-size:12px;color:{{ t.fg2 }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.preview }}</span></div>
+                  <span style="font-size:11px;color:{{ t.fg3 }}">{{ c.time }}</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="grid-column:1 / span 2;padding:16px;border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;font-weight:700">Fotos recentes</span><span onClick="{{ goPhotos }}" style="font-size:12px;color:{{ t.acc }};cursor:default">Ver biblioteca</span></div>
+              <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px">
+                <sc-for list="{{ photosTop }}" as="p" hint-placeholder-count="7">
+                  <div style="aspect-ratio:1;border-radius:10px;background:repeating-linear-gradient(135deg,{{ t.s1 }} 0 6px,{{ t.s2 }} 6px 12px);display:flex;align-items:flex-end;padding:6px;box-sizing:border-box;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:{{ t.fg3 }}">{{ p.label }}</div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="padding:16px;border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700"><span class="ms" style="font-size:17px;color:{{ t.acc }}">content_paste</span>Área de transferência</div>
+              <div style="font-size:13px;line-height:1.45;flex:1">{{ clip }}</div>
+              <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:11.5px;color:{{ t.fg3 }}">Do Pixel · há 1 min</span>
+                <div onClick="{{ copyClip }}" style="font-size:12px;font-weight:600;padding:6px 12px;border-radius:9px;background:{{ t.panel2 }};border:1px solid {{ t.line }};cursor:default">{{ copyLabel }}</div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- MESSAGES -->
+        <sc-if value="{{ is.messages }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;min-height:0;display:grid;grid-template-columns:280px minmax(0,1fr);gap:16px;animation:msFade .35s">
+            <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};padding:8px;display:flex;flex-direction:column;gap:2px;overflow:auto">
+              <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:6px;border-radius:10px;background:{{ t.input }};font-size:13px;color:{{ t.fg2 }}"><span class="ms" style="font-size:17px">search</span>Buscar conversas</div>
+              <sc-for list="{{ convs }}" as="c" hint-placeholder-count="5">
+                <div onClick="{{ c.open }}" style="display:flex;gap:10px;align-items:center;padding:10px;border-radius:12px;background:{{ c.bg }};cursor:default;transition:background .2s">
+                  <div style="width:38px;height:38px;border-radius:50%;flex-shrink:0;background:{{ c.color }};color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ c.ini }}</div>
+                  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                    <div style="display:flex;justify-content:space-between;gap:6px"><span style="font-size:13.5px;font-weight:600">{{ c.name }}</span><span style="font-size:11px;color:{{ t.fg3 }}">{{ c.time }}</span></div>
+                    <span style="font-size:12.5px;color:{{ t.fg2 }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.preview }}</span>
+                  </div>
+                  <sc-if value="{{ c.unread }}" hint-placeholder-val="{{ false }}"><span style="width:8px;height:8px;border-radius:50%;background:oklch(0.72 0.15 165);flex-shrink:0"></span></sc-if>
+                </div>
+              </sc-for>
+            </div>
+            <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};display:flex;flex-direction:column;min-height:0;overflow:hidden">
+              <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid {{ t.line }}">
+                <div style="width:36px;height:36px;border-radius:50%;background:{{ conv.color }};color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ conv.ini }}</div>
+                <div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:14px;font-weight:700">{{ conv.name }}</span><span style="font-size:11.5px;color:{{ t.fg2 }}">RCS · enviado pelo Pixel 9 Pro</span></div>
+                <div onClick="{{ callConv }}" style="width:34px;height:34px;border-radius:10px;background:{{ t.panel2 }};display:flex;align-items:center;justify-content:center;cursor:default"><span class="ms">call</span></div>
+              </div>
+              <div style="flex:1;min-height:0;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:8px">
+                <div style="align-self:center;font-size:11px;color:{{ t.fg3 }};padding-bottom:6px">Hoje</div>
+                <sc-for list="{{ thread }}" as="m" hint-placeholder-count="4">
+                  <div style="display:flex;flex-direction:column;align-items:{{ m.align }};gap:3px;animation:msFade .3s">
+                    <div style="max-width:62%;padding:9px 13px;border-radius:18px;font-size:13.5px;line-height:1.4;background:{{ m.bg }};color:{{ m.fg }}">{{ m.text }}</div>
+                    <span style="font-size:10.5px;color:{{ t.fg3 }};padding:0 6px">{{ m.time }}</span>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ typing }}" hint-placeholder-val="{{ false }}">
+                  <div style="align-self:flex-start;display:flex;gap:4px;padding:12px 14px;border-radius:18px;background:{{ t.panel2 }}">
+                    <span style="width:6px;height:6px;border-radius:50%;background:{{ t.fg2 }};animation:msDot 1.2s infinite"></span>
+                    <span style="width:6px;height:6px;border-radius:50%;background:{{ t.fg2 }};animation:msDot 1.2s .15s infinite"></span>
+                    <span style="width:6px;height:6px;border-radius:50%;background:{{ t.fg2 }};animation:msDot 1.2s .3s infinite"></span>
+                  </div>
+                </sc-if>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-top:1px solid {{ t.line }}">
+                <span class="ms" style="font-size:21px;color:{{ t.fg2 }}">add_circle</span>
+                <div style="flex:1;display:flex;align-items:center;padding:9px 14px;border-radius:20px;background:{{ t.input }};border:1px solid {{ t.line }}">
+                  <input value="{{ draft }}" onChange="{{ onDraft }}" onKeyDown="{{ onDraftKey }}" placeholder="Mensagem RCS" style="flex:1;font-size:13.5px">
+                </div>
+                <div onClick="{{ send }}" style="width:36px;height:36px;border-radius:50%;background:oklch(0.72 0.15 165);display:flex;align-items:center;justify-content:center;cursor:default"><span class="ms" style="font-size:19px;color:#06130d">arrow_upward</span></div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- CALLS -->
+        <sc-if value="{{ is.calls }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;animation:msFade .35s">
+            <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};padding:8px 16px">
+              <sc-for list="{{ calls }}" as="c" hint-placeholder-count="6">
+                <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid {{ t.line }}">
+                  <div style="width:36px;height:36px;border-radius:50%;background:{{ c.color }};color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ c.ini }}</div>
+                  <div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:13.5px;font-weight:600;color:{{ c.nameColor }}">{{ c.name }}</span><span style="font-size:12px;color:{{ t.fg2 }};display:flex;align-items:center;gap:4px"><span class="ms" style="font-size:14px">{{ c.icon }}</span>{{ c.kind }}</span></div>
+                  <span style="font-size:12px;color:{{ t.fg3 }};width:90px;text-align:right">{{ c.time }}</span>
+                  <div onClick="{{ c.call }}" style="width:34px;height:34px;border-radius:10px;background:oklch(0.72 0.15 165 / .18);display:flex;align-items:center;justify-content:center;cursor:default"><span class="ms" style="color:{{ t.acc }}">call</span></div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:16px">
+              <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};padding:16px;display:flex;flex-direction:column;gap:14px">
+                <span style="font-size:13px;font-weight:700">Favoritos</span>
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+                  <sc-for list="{{ favs }}" as="f" hint-placeholder-count="4">
+                    <div onClick="{{ f.call }}" style="display:flex;flex-direction:column;align-items:center;gap:6px;cursor:default">
+                      <div style="width:48px;height:48px;border-radius:50%;background:{{ f.color }};color:#fff;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ f.ini }}</div>
+                      <span style="font-size:11.5px">{{ f.first }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};padding:16px;display:flex;flex-direction:column;gap:10px">
+                <span style="font-size:13px;font-weight:700">Áudio da chamada</span>
+                <div style="display:flex;align-items:center;gap:10px;font-size:13px"><span class="ms" style="color:{{ t.acc }}">laptop_mac</span><span style="flex:1">Alto-falantes e microfone do MacBook</span><span class="ms" style="color:{{ t.acc }}">check</span></div>
+                <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:{{ t.fg2 }}"><span class="ms">phone_android</span><span style="flex:1">Manter no celular</span></div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- NOTIFICATIONS -->
+        <sc-if value="{{ is.notifs }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;animation:msFade .35s">
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <sc-for list="{{ notifs }}" as="n" hint-placeholder-count="5">
+                <div style="display:flex;gap:12px;padding:14px;border-radius:18px;background:{{ t.panel }};border:1px solid {{ t.line }};animation:msFade .3s">
+                  <div style="width:38px;height:38px;border-radius:11px;flex-shrink:0;background:{{ n.color }};color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ n.ini }}</div>
+                  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                    <div style="display:flex;justify-content:space-between"><span style="font-size:11.5px;color:{{ t.fg2 }};font-weight:600">{{ n.app }}</span><span style="font-size:11px;color:{{ t.fg3 }}">{{ n.time }}</span></div>
+                    <span style="font-size:13.5px;font-weight:600">{{ n.title }}</span>
+                    <span style="font-size:13px;color:{{ t.fg2 }};line-height:1.4">{{ n.body }}</span>
+                  </div>
+                  <div onClick="{{ n.dismiss }}" style="width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:default;color:{{ t.fg3 }}" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:17px">close</span></div>
+                </div>
+              </sc-for>
+              <sc-if value="{{ noNotifs }}" hint-placeholder-val="{{ false }}"><div style="padding:40px;text-align:center;color:{{ t.fg2 }};font-size:13px">Tudo em dia.</div></sc-if>
+            </div>
+            <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};padding:16px;display:flex;flex-direction:column;gap:4px;align-self:start">
+              <span style="font-size:13px;font-weight:700;padding-bottom:8px">Espelhar notificações de</span>
+              <sc-for list="{{ apps }}" as="a" hint-placeholder-count="6">
+                <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid {{ t.line }}">
+                  <div style="width:26px;height:26px;border-radius:8px;background:{{ a.color }};color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ a.ini }}</div>
+                  <span style="flex:1;font-size:13px">{{ a.name }}</span>
+                  <div onClick="{{ a.toggle }}" style="width:36px;height:22px;border-radius:11px;background:{{ a.tg.bg }};position:relative;cursor:default;transition:background .2s"><div style="position:absolute;top:2px;left:{{ a.tg.x }};width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .2s"></div></div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- PHOTOS -->
+        <sc-if value="{{ is.photos }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:14px;animation:msFade .35s">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:12.5px;color:{{ t.fg2 }}">Clique para selecionar · arraste para o Finder</span>
+              <div onClick="{{ savePhotos }}" style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:10px;background:{{ saveBg }};color:{{ saveFg }};cursor:default;transition:all .2s"><span class="ms" style="font-size:16px">download</span>{{ saveLabel }}</div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px">
+              <sc-for list="{{ photos }}" as="p" hint-placeholder-count="18">
+                <div onClick="{{ p.toggle }}" draggable="true" style="position:relative;aspect-ratio:1;border-radius:14px;background:repeating-linear-gradient(135deg,{{ t.s1 }} 0 7px,{{ t.s2 }} 7px 14px);box-shadow:{{ p.ring }};display:flex;align-items:flex-end;padding:8px;box-sizing:border-box;font-family:'JetBrains Mono',monospace;font-size:10px;color:{{ t.fg3 }};cursor:default;transform:{{ p.scale }};transition:transform .2s,box-shadow .2s">
+                  {{ p.label }}
+                  <sc-if value="{{ p.sel }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:50%;background:oklch(0.72 0.15 165);display:flex;align-items:center;justify-content:center;animation:msPop .2s"><span class="ms" style="font-size:15px;color:#06130d">check</span></div></sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- FILES -->
+        <sc-if value="{{ is.files }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:16px;animation:msFade .35s">
+            <div onClick="{{ simulateFile }}" style="height:190px;border-radius:22px;border:1.5px dashed {{ t.fg3 }};background:{{ t.panel }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:default">
+              <div style="width:54px;height:54px;border-radius:16px;background:oklch(0.72 0.15 165 / .18);display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:28px;color:{{ t.acc }}">upload_file</span></div>
+              <span style="font-size:15px;font-weight:600">Arraste arquivos aqui para enviar ao Pixel</span>
+              <span style="font-size:12.5px;color:{{ t.fg2 }}">ou clique para escolher · salvos em Downloads/MasterSync</span>
+            </div>
+            <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};padding:6px 16px">
+              <sc-for list="{{ transfers }}" as="f" hint-placeholder-count="3">
+                <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid {{ t.line }};animation:msFade .3s">
+                  <div style="width:36px;height:36px;border-radius:10px;background:{{ t.panel2 }};display:flex;align-items:center;justify-content:center"><span class="ms" style="color:{{ t.acc }}">{{ f.dirIcon }}</span></div>
+                  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
+                    <div style="display:flex;justify-content:space-between;gap:10px"><span style="font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ f.name }}</span><span style="font-size:12px;color:{{ t.fg2 }};flex-shrink:0">{{ f.status }}</span></div>
+                    <div style="height:4px;border-radius:2px;background:{{ t.track }};overflow:hidden"><div style="height:100%;width:{{ f.w }};background:oklch(0.72 0.15 165);border-radius:2px;transition:width .2s"></div></div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- MIRROR -->
+        <sc-if value="{{ is.mirror }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;animation:msFade .35s">
+            <div style="border-radius:22px;background:{{ t.panel }};border:1px solid {{ t.line }};display:flex;align-items:center;justify-content:center;padding:20px">
+              <div style="width:292px;height:600px;border-radius:44px;padding:10px;box-sizing:border-box;background:#0a0b0e;box-shadow:0 30px 80px rgba(0,0,0,.4),0 0 0 1px rgba(255,255,255,.12)">
+                <div style="position:relative;width:100%;height:100%;border-radius:35px;overflow:hidden;background:{{ screenBg }};display:flex;flex-direction:column;transition:background .5s">
+                  <div style="height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;font-size:12px;color:#fff;font-weight:600"><span>{{ clock }}</span><div style="width:10px;height:10px;border-radius:50%;background:#000"></div><span class="ms" style="font-size:14px">signal_cellular_alt</span></div>
+                  <sc-if value="{{ mirroring }}" hint-placeholder-val="{{ false }}">
+                    <div style="flex:1;margin:4px 12px;border-radius:18px;background:repeating-linear-gradient(135deg,rgba(255,255,255,.05) 0 8px,rgba(255,255,255,.1) 8px 16px);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(255,255,255,.6);animation:msPop .4s">tela do Android ao vivo</div>
+                  </sc-if>
+                  <sc-if value="{{ notMirroring }}" hint-placeholder-val="{{ true }}">
+                    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:#fff;padding:20px;text-align:center">
+                      <span class="ms" style="font-size:36px;opacity:.8">cast</span>
+                      <span style="font-size:14px;font-weight:600">Tela do Pixel pronta</span>
+                      <div onClick="{{ toggleMirror }}" style="padding:9px 18px;border-radius:20px;background:oklch(0.72 0.15 165);color:#06130d;font-size:13px;font-weight:700;cursor:default">Iniciar espelhamento</div>
+                    </div>
+                  </sc-if>
+                  <div style="height:22px;display:flex;align-items:center;justify-content:center"><div style="width:96px;height:4px;border-radius:2px;background:rgba(255,255,255,.7)"></div></div>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:16px">
+              <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};padding:16px;display:flex;flex-direction:column;gap:12px">
+                <div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:{{ liveDot }};animation:msPulse 1.6s infinite"></span><span style="font-size:13px;font-weight:700">{{ mirrorStatus }}</span></div>
+                <span style="font-size:12.5px;color:{{ t.fg2 }};line-height:1.45">Use mouse e teclado do Mac para controlar o celular. Apps abrem em janelas próprias.</span>
+                <div onClick="{{ toggleMirror }}" style="padding:9px;border-radius:10px;text-align:center;font-size:13px;font-weight:600;background:{{ t.panel2 }};border:1px solid {{ t.line }};cursor:default">{{ mirrorBtn }}</div>
+              </div>
+              <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};padding:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+                <sc-for list="{{ mirrorTools }}" as="m" hint-placeholder-count="6">
+                  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px;border-radius:12px;cursor:default;font-size:11.5px" style-hover="background:rgba(127,127,127,.12)"><span class="ms" style="font-size:21px">{{ m.icon }}</span>{{ m.label }}</div>
+                </sc-for>
+              </div>
+              <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};padding:16px;display:flex;flex-direction:column;gap:8px;font-size:12.5px">
+                <div style="display:flex;justify-content:space-between"><span style="color:{{ t.fg2 }}">Resolução</span><span>1080p · 60 fps</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:{{ t.fg2 }}">Latência</span><span>{{ latency }}</span></div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- APPS -->
+        <sc-if value="{{ is.apps }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;animation:msFade .35s">
+            <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+              <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};padding:16px;display:flex;flex-direction:column;gap:12px">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                  <span style="font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px"><span class="ms" style="font-size:17px;color:{{ t.acc }};font-variation-settings:'FILL' 1">push_pin</span>Fixados</span>
+                  <span style="font-size:12px;color:{{ t.fg2 }}">Os 5 primeiros ficam na barra lateral e no menu</span>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  <sc-for list="{{ pinnedApps }}" as="a" hint-placeholder-count="5">
+                    <div style="position:relative;animation:msPop .2s">
+                      <button class="btn" onClick="{{ a.open }}" aria-label="{{ a.openLabel }}" style="width:84px;display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 4px;border-radius:14px" style-hover="background:rgba(127,127,127,.12)">
+                        <span style="width:50px;height:50px;border-radius:15px;background:{{ a.color }};display:flex;align-items:center;justify-content:center;box-shadow:{{ a.ring }}"><span class="ms" style="font-size:25px;color:#fff">{{ a.icon }}</span></span>
+                        <span style="font-size:12px;font-weight:500;max-width:76px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.name }}</span>
+                      </button>
+                      <button class="btn" onClick="{{ a.pin }}" aria-label="{{ a.pinLabel }}" title="{{ a.pinLabel }}" style="position:absolute;top:4px;right:10px;width:22px;height:22px;border-radius:50%;background:{{ t.panel2 }};border:1px solid {{ t.line }};display:flex;align-items:center;justify-content:center;color:{{ t.fg2 }}"><span class="ms" style="font-size:14px">close</span></button>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ noPinned }}" hint-placeholder-val="{{ false }}"><span style="padding:18px 4px;font-size:12.5px;color:{{ t.fg2 }}">Use o alfinete num app abaixo para fixá-lo aqui.</span></sc-if>
+                </div>
+              </div>
+              <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};padding:16px;display:flex;flex-direction:column;gap:12px">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                  <span style="font-size:13px;font-weight:700">Todos os apps <span style="font-weight:400;color:{{ t.fg2 }}">· {{ appCount }}</span></span>
+                  <label style="width:240px;display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:10px;background:{{ t.input }};border:1px solid {{ t.line }};font-size:13px;color:{{ t.fg2 }}"><span class="ms" style="font-size:17px">search</span><input value="{{ appQuery }}" onChange="{{ onAppQuery }}" placeholder="Buscar apps do Pixel" aria-label="Buscar apps do Pixel" style="flex:1;min-width:0;color:{{ t.fg }}"></label>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
+                  <sc-for list="{{ appList }}" as="a" hint-placeholder-count="16">
+                    <div style="display:flex;align-items:center;gap:4px;padding:4px 4px 4px 6px;border-radius:13px;border:1px solid {{ t.line }};background:{{ a.cardBg }};transition:background .2s">
+                      <button class="btn" onClick="{{ a.open }}" aria-label="{{ a.openLabel }}" style="flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:5px 2px;border-radius:9px">
+                        <span style="position:relative;width:34px;height:34px;flex-shrink:0;border-radius:10px;background:{{ a.color }};display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:19px;color:#fff">{{ a.icon }}</span></span>
+                        <span style="min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.name }}</span><span style="font-size:11px;color:{{ a.subColor }};white-space:nowrap">{{ a.sub }}</span></span>
+                      </button>
+                      <button class="btn" onClick="{{ a.pin }}" aria-label="{{ a.pinLabel }}" title="{{ a.pinLabel }}" style="width:28px;height:28px;flex-shrink:0;border-radius:8px;display:flex;align-items:center;justify-content:center;color:{{ a.pinColor }}" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:17px;font-variation-settings:{{ a.pinFill }}">push_pin</span></button>
+                    </div>
+                  </sc-for>
+                </div>
+                <sc-if value="{{ noApps }}" hint-placeholder-val="{{ false }}"><div style="padding:24px;text-align:center;font-size:13px;color:{{ t.fg2 }}">Nenhum app encontrado.</div></sc-if>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:16px">
+              <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};padding:16px;display:flex;flex-direction:column;gap:4px">
+                <span style="font-size:13px;font-weight:700;padding-bottom:8px">Abertos no Mac</span>
+                <sc-for list="{{ openList }}" as="w" hint-placeholder-count="2">
+                  <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid {{ t.line }};animation:msFade .25s">
+                    <button class="btn" onClick="{{ w.focus }}" aria-label="{{ w.focusLabel }}" style="flex:1;min-width:0;display:flex;align-items:center;gap:10px">
+                      <span style="width:28px;height:28px;border-radius:8px;background:{{ w.color }};display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:16px;color:#fff">{{ w.icon }}</span></span>
+                      <span style="min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-size:13px;font-weight:600">{{ w.name }}</span><span style="font-size:11px;color:{{ t.fg2 }}">{{ w.state }}</span></span>
+                    </button>
+                    <button class="btn" onClick="{{ w.close }}" aria-label="{{ w.closeLabel }}" style="width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:{{ t.fg2 }}" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:17px">close</span></button>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ noOpen }}" hint-placeholder-val="{{ true }}"><span style="font-size:12.5px;color:{{ t.fg2 }};line-height:1.45;padding-top:8px;border-top:1px solid {{ t.line }}">Nenhum app aberto. Clique num app para abri-lo numa janela própria.</span></sc-if>
+              </div>
+              <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};padding:6px 16px">
+                <sc-for list="{{ appOpts }}" as="o" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid {{ t.line }}">
+                    <div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:600">{{ o.label }}</span><span style="font-size:11.5px;color:{{ t.fg2 }}">{{ o.sub }}</span></div>
+                    <button class="btn" onClick="{{ o.toggle }}" role="switch" aria-checked="{{ o.on }}" aria-label="{{ o.label }}" style="width:36px;height:22px;flex-shrink:0;border-radius:11px;background:{{ o.tg.bg }};position:relative;transition:background .2s"><span style="position:absolute;top:2px;left:{{ o.tg.x }};width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .2s"></span></button>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- WEBCAM -->
+        <sc-if value="{{ is.webcam }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;animation:msFade .35s">
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div style="position:relative;aspect-ratio:16/9;border-radius:22px;overflow:hidden;background:repeating-linear-gradient(135deg,{{ t.s1 }} 0 10px,{{ t.s2 }} 10px 20px);border:1px solid {{ t.line }};display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:12px;color:{{ t.fg3 }}">
+                {{ camLabel }}
+                <sc-if value="{{ cam.on }}" hint-placeholder-val="{{ false }}">
+                  <div style="position:absolute;top:14px;left:14px;display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:8px;background:rgba(0,0,0,.55);color:#fff;font-family:-apple-system,Helvetica,sans-serif;font-size:11.5px;font-weight:700;animation:msPop .3s"><span style="width:7px;height:7px;border-radius:50%;background:#ff453a;animation:msPulse 1.2s infinite"></span>AO VIVO · {{ cam.lens }}</div>
+                </sc-if>
+                <sc-if value="{{ cam.auto }}" hint-placeholder-val="{{ false }}">
+                  <div style="position:absolute;inset:22% 32%;border:1.5px solid oklch(0.72 0.15 165 / .8);border-radius:14px;transition:all .4s"></div>
+                </sc-if>
+              </div>
+              <div style="display:flex;gap:4px;padding:4px;border-radius:12px;background:{{ t.panel }};border:1px solid {{ t.line }};align-self:flex-start">
+                <sc-for list="{{ lenses }}" as="l" hint-placeholder-count="3">
+                  <div onClick="{{ l.pick }}" style="padding:7px 14px;border-radius:9px;font-size:12.5px;font-weight:600;background:{{ l.bg }};box-shadow:{{ l.sh }};cursor:default;transition:all .2s">{{ l.name }}</div>
+                </sc-for>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:16px">
+              <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};padding:16px;display:flex;flex-direction:column;gap:12px">
+                <span style="font-size:13px;font-weight:700">Câmera de Continuidade</span>
+                <span style="font-size:12.5px;color:{{ t.fg2 }};line-height:1.45">Aparece como “MasterSync Camera” no FaceTime, Zoom, Meet e Teams.</span>
+                <div onClick="{{ toggleCam }}" style="padding:10px;border-radius:11px;text-align:center;font-size:13px;font-weight:700;background:{{ camBtnBg }};color:{{ camBtnFg }};cursor:default;transition:all .2s">{{ camBtn }}</div>
+              </div>
+              <div style="border-radius:20px;background:{{ t.panel }};border:1px solid {{ t.line }};padding:6px 16px">
+                <sc-for list="{{ camOpts }}" as="o" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid {{ t.line }}">
+                    <div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:600">{{ o.label }}</span><span style="font-size:11.5px;color:{{ t.fg2 }}">{{ o.sub }}</span></div>
+                    <div onClick="{{ o.toggle }}" style="width:36px;height:22px;border-radius:11px;background:{{ o.tg.bg }};position:relative;cursor:default;transition:background .2s"><div style="position:absolute;top:2px;left:{{ o.tg.x }};width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .2s"></div></div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ dragging }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;inset:12px;border-radius:20px;border:2px dashed oklch(0.72 0.15 165);background:oklch(0.72 0.15 165 / .12);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;animation:msPop .2s;pointer-events:none">
+          <span class="ms" style="font-size:44px;color:{{ t.acc }}">phone_android</span>
+          <span style="font-size:18px;font-weight:700">Solte para enviar ao Pixel 9 Pro</span>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+
+  <!-- APP WINDOWS -->
+  <sc-for list="{{ appWins }}" as="w" hint-placeholder-count="0">
+    <div onMouseDown="{{ w.focus }}" style="position:absolute;left:{{ w.x }};top:{{ w.y }};width:320px;height:640px;border-radius:22px;overflow:hidden;display:flex;flex-direction:column;background:{{ t.pop }};backdrop-filter:blur(50px) saturate(200%);-webkit-backdrop-filter:blur(50px) saturate(200%);border:1px solid {{ t.edge }};box-shadow:{{ w.shadow }};z-index:{{ w.z }};animation:msPop .3s cubic-bezier(.2,.9,.3,1.15)">
+      <div style="height:42px;flex-shrink:0;display:flex;align-items:center;gap:10px;padding:0 12px 0 14px;opacity:{{ w.chrome }}">
+        <div style="display:flex;gap:8px">
+          <button class="btn" onClick="{{ w.close }}" aria-label="{{ w.closeLabel }}" style="width:12px;height:12px;border-radius:50%;background:#ff5f57"></button>
+          <span aria-hidden="true" style="width:12px;height:12px;border-radius:50%;background:#febc2e"></span>
+          <span aria-hidden="true" style="width:12px;height:12px;border-radius:50%;background:#28c840"></span>
+        </div>
+        <span style="flex:1;min-width:0;text-align:center;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ w.name }}<span style="color:{{ t.fg2 }};font-weight:400"> · Pixel 9 Pro</span></span>
+        <button class="btn" onClick="{{ w.pin }}" aria-label="{{ w.pinLabel }}" title="{{ w.pinLabel }}" style="width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:{{ w.pinColor }}" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:17px;font-variation-settings:{{ w.pinFill }}">push_pin</span></button>
+      </div>
+      <div style="flex:1;margin:0 10px 10px;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;background:#0f1115">
+        <div style="height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;font-size:11px;color:#fff;font-weight:600;background:{{ w.color }}"><span>{{ clock }}</span><span class="ms" style="font-size:13px">signal_cellular_alt</span></div>
+        <div style="height:52px;display:flex;align-items:center;gap:10px;padding:0 14px;background:{{ w.color }};color:#fff"><span class="ms" style="font-size:22px">{{ w.icon }}</span><span style="font-size:16px;font-weight:700">{{ w.name }}</span></div>
+        <div style="flex:1;margin:10px;border-radius:12px;background:repeating-linear-gradient(135deg,rgba(255,255,255,.04) 0 8px,rgba(255,255,255,.09) 8px 16px);display:flex;align-items:center;justify-content:center;text-align:center;padding:16px;font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(255,255,255,.65)">{{ w.name }} ao vivo do Pixel</div>
+        <div style="height:20px;display:flex;align-items:center;justify-content:center"><div style="width:90px;height:4px;border-radius:2px;background:rgba(255,255,255,.6)"></div></div>
+      </div>
+    </div>
+  </sc-for>
+
+  <!-- MINI PLAYER -->
+  <sc-if value="{{ mp.show }}" hint-placeholder-val="{{ true }}">
+    <div style="position:absolute;right:24px;bottom:20px;width:360px;border-radius:22px;overflow:hidden;display:flex;flex-direction:column;background:{{ t.pop }};backdrop-filter:blur(50px) saturate(200%);-webkit-backdrop-filter:blur(50px) saturate(200%);border:1px solid {{ t.edge }};box-shadow:0 20px 60px rgba(0,0,0,.35);z-index:32;animation:msPop .25s">
+
+      <!-- collapsed -->
+      <sc-if value="{{ mp.collapsed }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 10px 12px">
+          <button class="btn" onClick="{{ mp.expand }}" aria-label="Expandir player" style="flex:1;min-width:0;display:flex;align-items:center;gap:10px">
+            <span style="width:44px;height:44px;flex-shrink:0;border-radius:11px;background:{{ mp.art }};display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:22px;color:#fff">{{ mp.icon }}</span></span>
+            <span style="min-width:0;display:flex;flex-direction:column;gap:2px">
+              <span style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ mp.title }}</span>
+              <span style="font-size:11.5px;color:{{ t.fg2 }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:4px"><span class="ms" style="font-size:13px;color:{{ t.acc }}">{{ mp.outIcon }}</span>{{ mp.artist }}</span>
+            </span>
+          </button>
+          <button class="btn" onClick="{{ mp.toggle }}" aria-label="{{ mp.playLabel }}" style="width:36px;height:36px;flex-shrink:0;border-radius:50%;background:oklch(0.72 0.15 165);display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:22px;color:#06130d;font-variation-settings:'FILL' 1">{{ mp.playIcon }}</span></button>
+          <button class="btn" onClick="{{ mp.next }}" aria-label="Próxima" style="width:32px;height:32px;flex-shrink:0;border-radius:50%;display:flex;align-items:center;justify-content:center" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:22px;font-variation-settings:'FILL' 1">skip_next</span></button>
+          <button class="btn" onClick="{{ mp.expand }}" aria-label="Expandir player" style="width:28px;height:28px;flex-shrink:0;border-radius:8px;display:flex;align-items:center;justify-content:center;color:{{ t.fg2 }}" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:18px">expand_less</span></button>
+        </div>
+        <div style="height:3px;background:{{ t.track }}"><div style="height:100%;width:{{ mp.pct }};background:oklch(0.72 0.15 165);transition:width 1s linear"></div></div>
+      </sc-if>
+
+      <!-- expanded -->
+      <sc-if value="{{ mp.expanded }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:12px;padding:12px 14px 14px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="flex:1;display:flex;align-items:center;gap:6px;font-size:11.5px;color:{{ t.fg2 }};font-weight:600"><span style="width:18px;height:18px;border-radius:5px;background:{{ mp.art }};display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:12px;color:#fff">{{ mp.appIcon }}</span></span>{{ mp.app }} · Pixel 9 Pro</span>
+            <button class="btn" onClick="{{ mp.collapse }}" aria-label="Recolher player" style="width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:{{ t.fg2 }}" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:18px">expand_more</span></button>
+            <button class="btn" onClick="{{ mp.hide }}" aria-label="Fechar player" style="width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:{{ t.fg2 }}" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:18px">close</span></button>
+          </div>
+
+          <sc-if value="{{ mp.isVideo }}" hint-placeholder-val="{{ false }}">
+            <div style="position:relative;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:repeating-linear-gradient(135deg,rgba(255,255,255,.04) 0 8px,rgba(255,255,255,.09) 8px 16px),#0f1115;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(255,255,255,.65)">
+              vídeo ao vivo do Pixel
+              <button class="btn" onClick="{{ mp.openWin }}" style="position:absolute;right:8px;bottom:8px;display:flex;align-items:center;gap:4px;padding:5px 9px;border-radius:8px;background:rgba(0,0,0,.6);color:#fff;font-family:-apple-system,Helvetica,sans-serif;font-size:11.5px;font-weight:600"><span class="ms" style="font-size:14px">open_in_new</span>Abrir em janela</button>
+            </div>
+          </sc-if>
+          <sc-if value="{{ mp.isAudio }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;align-items:center;gap:14px">
+              <div style="width:96px;height:96px;flex-shrink:0;border-radius:16px;background:{{ mp.art }};display:flex;align-items:center;justify-content:center;box-shadow:0 10px 30px rgba(0,0,0,.25)"><span class="ms" style="font-size:42px;color:#fff">{{ mp.icon }}</span></div>
+              <div style="min-width:0;display:flex;flex-direction:column;gap:4px">
+                <span style="font-size:16px;font-weight:700;line-height:1.25">{{ mp.title }}</span>
+                <span style="font-size:12.5px;color:{{ t.fg2 }}">{{ mp.artist }}</span>
+                <div aria-hidden="true" style="display:flex;align-items:flex-end;gap:3px;height:16px;margin-top:4px">
+                  <sc-for list="{{ mp.bars }}" as="b" hint-placeholder-count="5"><span style="width:3px;height:100%;border-radius:2px;background:{{ t.acc }};transform-origin:bottom;transform:scaleY({{ b.h }});transition:transform .3s"></span></sc-for>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ mp.isVideo }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:3px"><span style="font-size:14px;font-weight:700">{{ mp.title }}</span><span style="font-size:12px;color:{{ t.fg2 }}">{{ mp.artist }}</span></div>
+          </sc-if>
+
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <input type="range" min="0" max="{{ mp.dur }}" value="{{ mp.pos }}" onChange="{{ mp.seek }}" aria-label="Posição" style="width:100%;margin:0;accent-color:oklch(0.72 0.15 165)">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:{{ t.fg2 }};font-family:'JetBrains Mono',monospace"><span>{{ mp.posTxt }}</span><span>{{ mp.durTxt }}</span></div>
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:center;gap:14px">
+            <button class="btn" onClick="{{ mp.back10 }}" aria-label="Voltar 10 segundos" style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:22px">replay_10</span></button>
+            <button class="btn" onClick="{{ mp.prev }}" aria-label="Anterior" style="width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:28px;font-variation-settings:'FILL' 1">skip_previous</span></button>
+            <button class="btn" onClick="{{ mp.toggle }}" aria-label="{{ mp.playLabel }}" style="width:52px;height:52px;border-radius:50%;background:oklch(0.72 0.15 165);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px oklch(0.72 0.15 165 / .35)"><span class="ms" style="font-size:30px;color:#06130d;font-variation-settings:'FILL' 1">{{ mp.playIcon }}</span></button>
+            <button class="btn" onClick="{{ mp.next }}" aria-label="Próxima" style="width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:28px;font-variation-settings:'FILL' 1">skip_next</span></button>
+            <button class="btn" onClick="{{ mp.fwd10 }}" aria-label="Avançar 10 segundos" style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:22px">forward_10</span></button>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:10px">
+            <button class="btn" onClick="{{ mp.toggleMute }}" aria-label="{{ mp.muteLabel }}" style="width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:{{ t.fg2 }}" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:19px">{{ mp.volIcon }}</span></button>
+            <input type="range" min="0" max="100" value="{{ mp.vol }}" onChange="{{ mp.setVol }}" aria-label="Volume" style="flex:1;margin:0;accent-color:oklch(0.72 0.15 165)">
+            <span style="width:30px;text-align:right;font-size:11px;color:{{ t.fg2 }};font-family:'JetBrains Mono',monospace">{{ mp.volTxt }}</span>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:14px;background:{{ t.panel }};border:1px solid {{ t.line }}">
+            <span style="font-size:10.5px;color:{{ t.fg2 }};text-transform:uppercase;letter-spacing:.07em;font-weight:600">Som do celular</span>
+            <div style="display:flex;gap:4px;padding:3px;border-radius:10px;background:{{ t.input }}">
+              <button class="btn" onClick="{{ mp.toMac }}" aria-pressed="{{ mp.macPressed }}" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:7px;border-radius:8px;font-size:12px;font-weight:600;background:{{ mp.macBg }};box-shadow:{{ mp.macSh }};transition:all .2s"><span class="ms" style="font-size:16px">laptop_mac</span>No Mac</button>
+              <button class="btn" onClick="{{ mp.toPhone }}" aria-pressed="{{ mp.phonePressed }}" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:7px;border-radius:8px;font-size:12px;font-weight:600;background:{{ mp.phoneBg }};box-shadow:{{ mp.phoneSh }};transition:all .2s"><span class="ms" style="font-size:16px">phone_android</span>No Pixel</button>
+            </div>
+            <span style="font-size:11.5px;color:{{ t.fg2 }};line-height:1.4">{{ mp.outHint }}</span>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:10.5px;color:{{ t.fg2 }};text-transform:uppercase;letter-spacing:.07em;font-weight:600;padding-bottom:4px">Mídia no Pixel</span>
+            <sc-for list="{{ mp.queue }}" as="m" hint-placeholder-count="3">
+              <button class="btn" onClick="{{ m.pick }}" aria-label="{{ m.label }}" style="display:flex;align-items:center;gap:10px;padding:6px;border-radius:10px;background:{{ m.bg }}" style-hover="background:rgba(127,127,127,.12)">
+                <span style="width:30px;height:30px;flex-shrink:0;border-radius:8px;background:{{ m.art }};display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:16px;color:#fff">{{ m.icon }}</span></span>
+                <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.title }}</span><span style="font-size:11px;color:{{ t.fg2 }}">{{ m.app }} · {{ m.artist }}</span></span>
+                <sc-if value="{{ m.cur }}" hint-placeholder-val="{{ false }}"><span class="ms" style="font-size:16px;color:{{ t.acc }}">graphic_eq</span></sc-if>
+              </button>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+
+  <!-- MENU BAR POPOVER -->
+  <sc-if value="{{ popover }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;top:36px;right:200px;width:340px;border-radius:20px;padding:14px;box-sizing:border-box;display:flex;flex-direction:column;gap:12px;background:{{ t.pop }};backdrop-filter:blur(50px) saturate(200%);-webkit-backdrop-filter:blur(50px) saturate(200%);border:1px solid {{ t.edge }};box-shadow:0 24px 70px rgba(0,0,0,.35);z-index:40;animation:msPop .22s;transform-origin:top right">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:40px;height:40px;border-radius:12px;background:oklch(0.72 0.15 165 / .2);display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:22px;color:{{ t.acc }}">phone_android</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:14px;font-weight:700">Pixel 9 Pro</span><span style="font-size:11.5px;color:{{ t.fg2 }}">Wi‑Fi · Vivo 5G · {{ battery }}% carregando</span></div>
+        <span class="ms" style="font-size:20px;color:{{ t.acc }}">battery_charging_80</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <sc-for list="{{ tiles }}" as="q" hint-placeholder-count="4">
+          <div onClick="{{ q.toggle }}" style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:14px;background:{{ q.bg }};border:1px solid {{ t.line }};cursor:default;transition:background .2s">
+            <div style="width:30px;height:30px;border-radius:50%;background:{{ q.ib }};display:flex;align-items:center;justify-content:center;transition:background .2s"><span class="ms" style="font-size:17px;color:{{ q.ic }}">{{ q.icon }}</span></div>
+            <div style="display:flex;flex-direction:column;gap:1px"><span style="font-size:12px;font-weight:600">{{ q.label }}</span><span style="font-size:10.5px;color:{{ t.fg2 }}">{{ q.state }}</span></div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:10.5px;color:{{ t.fg2 }};text-transform:uppercase;letter-spacing:.07em;font-weight:600">Apps fixados</span><button class="btn" onClick="{{ goApps }}" style="font-size:11.5px;color:{{ t.acc }}">Todos os apps</button></div>
+        <div style="display:flex;gap:6px">
+          <sc-for list="{{ pinnedSide }}" as="a" hint-placeholder-count="5">
+            <button class="btn" onClick="{{ a.open }}" aria-label="{{ a.openLabel }}" style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:5px;padding:6px 2px;border-radius:12px" style-hover="background:rgba(127,127,127,.15)">
+              <span style="width:38px;height:38px;border-radius:12px;background:{{ a.color }};display:flex;align-items:center;justify-content:center;box-shadow:{{ a.ring }}"><span class="ms" style="font-size:20px;color:#fff">{{ a.icon }}</span></span>
+              <span style="font-size:10.5px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.short }}</span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding:10px 12px;border-radius:14px;background:{{ t.panel }};border:1px solid {{ t.line }};display:flex;flex-direction:column;gap:4px">
+        <span style="font-size:10.5px;color:{{ t.fg2 }};text-transform:uppercase;letter-spacing:.07em;font-weight:600">Copiado no Pixel</span>
+        <span style="font-size:12.5px;line-height:1.4">{{ clip }}</span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <div onClick="{{ openFiles }}" style="flex:1;padding:9px;border-radius:11px;text-align:center;font-size:12.5px;font-weight:600;background:{{ t.panel2 }};border:1px solid {{ t.line }};cursor:default">Enviar arquivo…</div>
+        <div onClick="{{ togglePopover }}" style="flex:1;padding:9px;border-radius:11px;text-align:center;font-size:12.5px;font-weight:700;background:oklch(0.72 0.15 165);color:#06130d;cursor:default">Abrir MasterSync</div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- CALL -->
+  <sc-if value="{{ ringing }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;top:44px;left:50%;margin-left:-220px;width:440px;border-radius:24px;padding:16px;box-sizing:border-box;display:flex;align-items:center;gap:14px;background:{{ t.pop }};backdrop-filter:blur(50px) saturate(200%);-webkit-backdrop-filter:blur(50px) saturate(200%);border:1px solid {{ t.edge }};box-shadow:0 24px 70px rgba(0,0,0,.4);z-index:45;animation:msDrop .35s cubic-bezier(.2,.9,.3,1.2)">
+      <div style="width:52px;height:52px;border-radius:50%;background:{{ callColor }};color:#fff;font-size:17px;font-weight:700;display:flex;align-items:center;justify-content:center;animation:msRing 1.4s infinite">{{ call.ini }}</div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:3px"><span style="font-size:11.5px;color:{{ t.fg2 }}">Chamada recebida · Pixel 9 Pro</span><span style="font-size:16px;font-weight:700">{{ call.name }}</span></div>
+      <div onClick="{{ declineCall }}" style="width:44px;height:44px;border-radius:50%;background:#ff453a;display:flex;align-items:center;justify-content:center;cursor:default"><span class="ms" style="font-size:22px;color:#fff">call_end</span></div>
+      <div onClick="{{ acceptCall }}" style="width:44px;height:44px;border-radius:50%;background:#30d158;display:flex;align-items:center;justify-content:center;cursor:default"><span class="ms" style="font-size:22px;color:#fff">call</span></div>
+    </div>
+  </sc-if>
+  <sc-if value="{{ inCall }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;top:44px;left:50%;margin-left:-170px;width:340px;border-radius:30px;padding:8px 8px 8px 10px;box-sizing:border-box;display:flex;align-items:center;gap:10px;background:rgba(12,13,16,.82);color:#fff;backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);box-shadow:0 20px 60px rgba(0,0,0,.4);z-index:45;animation:msPop .3s">
+      <div style="width:36px;height:36px;border-radius:50%;background:{{ callColor }};font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ call.ini }}</div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:1px"><span style="font-size:13px;font-weight:700">{{ call.name }}</span><span style="font-size:11.5px;color:#30d158;font-family:'JetBrains Mono',monospace">{{ callTime }} · no Mac</span></div>
+      <div onClick="{{ toggleMute }}" style="width:36px;height:36px;border-radius:50%;background:{{ muteBg }};display:flex;align-items:center;justify-content:center;cursor:default"><span class="ms" style="font-size:19px;color:{{ muteFg }}">{{ muteIcon }}</span></div>
+      <div onClick="{{ declineCall }}" style="width:36px;height:36px;border-radius:50%;background:#ff453a;display:flex;align-items:center;justify-content:center;cursor:default"><span class="ms" style="font-size:19px">call_end</span></div>
+    </div>
+  </sc-if>
+
+  <!-- TOASTS -->
+  <div style="position:absolute;top:40px;right:14px;width:356px;display:flex;flex-direction:column;gap:10px;z-index:35">
+    <sc-for list="{{ toasts }}" as="n" hint-placeholder-count="0">
+      <div style="border-radius:20px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;background:{{ t.pop }};backdrop-filter:blur(50px) saturate(200%);-webkit-backdrop-filter:blur(50px) saturate(200%);border:1px solid {{ t.edge }};box-shadow:0 18px 50px rgba(0,0,0,.3);animation:msToast .45s cubic-bezier(.2,.9,.3,1.15)">
+        <div style="display:flex;gap:12px">
+          <div style="width:38px;height:38px;border-radius:11px;flex-shrink:0;background:{{ n.color }};color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ n.ini }}</div>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+            <div style="display:flex;justify-content:space-between;gap:8px"><span style="font-size:13px;font-weight:700">{{ n.title }}</span><span style="font-size:11px;color:{{ t.fg3 }};display:flex;align-items:center;gap:3px"><span class="ms" style="font-size:12px">phone_android</span>agora</span></div>
+            <span style="font-size:12.5px;color:{{ t.fg2 }};line-height:1.4">{{ n.body }}</span>
+          </div>
+        </div>
+        <sc-if value="{{ n.showActions }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;gap:8px">
+            <div onClick="{{ n.reply }}" style="flex:1;padding:7px;border-radius:10px;text-align:center;font-size:12px;font-weight:600;background:{{ t.panel2 }};border:1px solid {{ t.line }};cursor:default">Responder</div>
+            <div onClick="{{ n.close }}" style="flex:1;padding:7px;border-radius:10px;text-align:center;font-size:12px;font-weight:600;background:{{ t.panel2 }};border:1px solid {{ t.line }};cursor:default">Dispensar</div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ n.replying }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 6px 6px 12px;border-radius:14px;background:{{ t.input }};border:1px solid {{ t.line }};animation:msFade .2s">
+            <input autoFocus="{{ true }}" value="{{ n.text }}" onChange="{{ n.onText }}" onKeyDown="{{ n.onKey }}" placeholder="Responder pelo Pixel…" style="flex:1;font-size:12.5px">
+            <div onClick="{{ n.send }}" style="width:28px;height:28px;border-radius:50%;background:oklch(0.72 0.15 165);display:flex;align-items:center;justify-content:center;cursor:default"><span class="ms" style="font-size:16px;color:#06130d">arrow_upward</span></div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ n.sent }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:{{ t.acc }};animation:msFade .2s"><span class="ms" style="font-size:16px">done_all</span>Enviado pelo Pixel</div>
+        </sc-if>
+      </div>
+    </sc-for>
+  </div>
+
+  <!-- DEMO DOCK -->
+  <div style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;padding:6px;border-radius:18px;background:{{ t.pop }};backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);border:1px solid {{ t.edge }};box-shadow:0 14px 40px rgba(0,0,0,.25);z-index:30;font-size:12.5px;font-weight:600">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{ t.fg2 }};padding:0 8px;font-weight:500">DEMO</span>
+    <div style="display:flex;gap:2px;padding:3px;border-radius:12px;background:{{ t.panel }}">
+      <div onClick="{{ setA }}" style="padding:6px 12px;border-radius:9px;background:{{ layA }};cursor:default;transition:background .2s">Layout A</div>
+      <div onClick="{{ setB }}" style="padding:6px 12px;border-radius:9px;background:{{ layB }};cursor:default;transition:background .2s">Layout B</div>
+    </div>
+    <div onClick="{{ toggleTheme }}" style="display:flex;align-items:center;gap:6px;padding:9px 12px;border-radius:12px;cursor:default" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:17px">{{ themeIcon }}</span>{{ themeLabel }}</div>
+    <div style="width:1px;height:22px;background:{{ t.line }}"></div>
+    <div onClick="{{ simulateNotif }}" style="display:flex;align-items:center;gap:6px;padding:9px 12px;border-radius:12px;cursor:default" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:17px">notifications</span>Notificação</div>
+    <div onClick="{{ simulateCall }}" style="display:flex;align-items:center;gap:6px;padding:9px 12px;border-radius:12px;cursor:default" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:17px">call</span>Chamada</div>
+    <div onClick="{{ simulateFile }}" style="display:flex;align-items:center;gap:6px;padding:9px 12px;border-radius:12px;cursor:default" style-hover="background:rgba(127,127,127,.15)"><span class="ms" style="font-size:17px">upload_file</span>Arquivo</div>
+  </div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;layout&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;A · Barra lateral&quot;,&quot;B · Abas flutuantes&quot;],&quot;default&quot;:&quot;A · Barra lateral&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Escuro&quot;,&quot;Claro&quot;],&quot;default&quot;:&quot;Escuro&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;glassOpacity&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;min&quot;:8,&quot;max&quot;:70,&quot;step&quot;:1,&quot;unit&quot;:&quot;%&quot;,&quot;default&quot;:30,&quot;tsType&quot;:&quot;number&quot;}}">
+class Component extends DCLogic {
+  state = {
+    scale: 1, theme: null, layout: null, section: 'overview', popover: false,
+    toasts: [], call: null, muted: false, now: Date.now(),
+    convId: 'lucas', draft: '', typing: false,
+    convs: [
+      { id: 'lucas', name: 'Lucas Andrade', ini: 'LA', hue: 250, unread: true, msgs: [
+        { me: false, text: 'Conseguiu ver o protótipo?', time: '13:58' },
+        { me: true, text: 'Vi sim! Ficou muito bom, só ajustaria o onboarding.', time: '14:02' },
+        { me: false, text: 'Fechado. Te mando a versão nova até as 16h', time: '14:21' }] },
+      { id: 'mae', name: 'Mãe', ini: 'M', hue: 350, unread: true, msgs: [
+        { me: false, text: 'Filho, vem jantar domingo?', time: '12:40' }] },
+      { id: 'equipe', name: 'Equipe Design', ini: 'ED', hue: 165, msgs: [
+        { me: false, text: 'Ana: subi os assets no Drive', time: '11:15' }] },
+      { id: 'julia', name: 'Júlia Martins', ini: 'JM', hue: 60, msgs: [
+        { me: true, text: 'Combinado, até amanhã!', time: 'Ontem' }] },
+      { id: 'banco', name: '29104', ini: '#', hue: 220, msgs: [
+        { me: false, text: 'Seu código de verificação é 482 913. Não compartilhe.', time: 'Ontem' }] }
+    ],
+    transfers: [
+      { id: 1, name: 'PXL_20261126_141203.jpg', size: '4,1 MB', dir: 'down', p: 1 },
+      { id: 2, name: 'Contrato_assinado.pdf', size: '840 KB', dir: 'down', p: 1 }
+    ],
+    dragging: false, mirroring: false,
+    cam: { on: false, lens: 'Principal', auto: true, portrait: false, light: false },
+    battery: 82, copied: false,
+    qt: { clip: true, notif: true },
+    sel: [],
+    pinned: ['whatsapp', 'spotify', 'maps', 'nubank', 'ifood'],
+    media: { idx: 0, playing: true, pos: 42, vol: 70, muted: false, onMac: true, view: 'mini' },
+    openApps: [], appQuery: '', appOpt: { dock: true, keep: true, full: false },
+    apps: { WhatsApp: true, Gmail: true, Nubank: true, 'Google Agenda': true, Instagram: false, iFood: true },
+    notifs: [
+      { id: 'a', app: 'WhatsApp', ini: 'W', hue: 150, title: 'Rafa', body: 'Bora no futebol quinta? Tô montando o time', time: '14:18' },
+      { id: 'b', app: 'Google Agenda', ini: 'GA', hue: 250, title: 'Revisão de design em 30 min', body: 'Sala 3B · Google Meet', time: '14:02' },
+      { id: 'c', app: 'Nubank', ini: 'Nu', hue: 300, title: 'Pix recebido', body: 'Você recebeu R$ 120,00 de Júlia Martins', time: '13:40' },
+      { id: 'd', app: 'Gmail', ini: 'G', hue: 25, title: 'Fatura de novembro disponível', body: 'Sua fatura fecha em 3 dias.', time: '12:10' }
+    ]
+  };
+  pool = [
+    { app: 'WhatsApp', ini: 'W', hue: 150, title: 'Lucas Andrade', body: 'Mandei a versão nova, dá uma olhada quando puder 👀' },
+    { app: 'iFood', ini: 'iF', hue: 20, title: 'Seu pedido saiu para entrega', body: 'Chega em cerca de 15 minutos' },
+    { app: 'Gmail', ini: 'G', hue: 25, title: 'Ana Souza', body: 'Re: Assets finais — tudo aprovado pelo cliente' },
+    { app: 'Nubank', ini: 'Nu', hue: 300, title: 'Compra aprovada', body: 'R$ 38,90 em Padaria Central' }
+  ];
+  catalog = [
+    { id: 'whatsapp', name: 'WhatsApp', icon: 'chat', hue: 150, cat: 'Social' },
+    { id: 'instagram', name: 'Instagram', icon: 'photo_camera', hue: 350, cat: 'Social' },
+    { id: 'spotify', name: 'Spotify', icon: 'music_note', hue: 145, cat: 'Música' },
+    { id: 'maps', name: 'Google Maps', short: 'Maps', icon: 'map', hue: 200, cat: 'Navegação' },
+    { id: 'nubank', name: 'Nubank', icon: 'account_balance', hue: 300, cat: 'Finanças' },
+    { id: 'ifood', name: 'iFood', icon: 'restaurant', hue: 20, cat: 'Comida' },
+    { id: 'gmail', name: 'Gmail', icon: 'mail', hue: 25, cat: 'Produtividade' },
+    { id: 'youtube', name: 'YouTube', icon: 'smart_display', hue: 28, cat: 'Vídeo' },
+    { id: 'uber', name: 'Uber', icon: 'local_taxi', hue: 270, cat: 'Transporte' },
+    { id: 'agenda', name: 'Google Agenda', short: 'Agenda', icon: 'calendar_month', hue: 250, cat: 'Produtividade' },
+    { id: 'fotos', name: 'Google Fotos', short: 'Fotos', icon: 'photo_library', hue: 90, cat: 'Fotos' },
+    { id: 'telegram', name: 'Telegram', icon: 'send', hue: 230, cat: 'Social' },
+    { id: 'meli', name: 'Mercado Livre', short: 'Mercado', icon: 'shopping_bag', hue: 95, cat: 'Compras' },
+    { id: 'waze', name: 'Waze', icon: 'navigation', hue: 215, cat: 'Navegação' },
+    { id: 'duolingo', name: 'Duolingo', icon: 'school', hue: 135, cat: 'Educação' },
+    { id: 'chrome', name: 'Chrome', icon: 'public', hue: 60, cat: 'Navegador' }
+  ];
+  pi = 0; uid = 10;
+  tracks = [
+    { title: 'Maré Alta', artist: 'Luiza Prado', app: 'Spotify', appId: 'spotify', appIcon: 'music_note', icon: 'album', hue: 145, dur: 236, kind: 'audio' },
+    { title: 'Pixel 9 Pro: 6 meses depois', artist: 'Canal Bits & Bytes', app: 'YouTube', appId: 'youtube', appIcon: 'smart_display', icon: 'smart_display', hue: 28, dur: 612, kind: 'video' },
+    { title: 'Ep. 214 · Design e IA', artist: 'Podcast Ruído Branco', app: 'Spotify', appId: 'spotify', appIcon: 'music_note', icon: 'podcasts', hue: 280, dur: 2840, kind: 'audio' }
+  ];
+  patchMedia(p) { this.setState(s => ({ media: { ...s.media, ...(typeof p === 'function' ? p(s.media) : p) } })); }
+  stepTrack(d) { this.patchMedia(m => ({ idx: (m.idx + d + this.tracks.length) % this.tracks.length, pos: 0, playing: true })); }
+  fmt(s) { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = String(s % 60).padStart(2, '0'); return h ? `${h}:${String(m).padStart(2, '0')}:${x}` : `${m}:${x}`; }
+
+  openApp = (id) => this.setState(s => {
+    const ex = s.openApps.find(o => o.id === id);
+    if (ex) return { openApps: [...s.openApps.filter(o => o.id !== id), ex], popover: false };
+    let list = s.openApps.length >= 4 ? s.openApps.slice(1) : s.openApps;
+    const used = list.map(o => o.slot); let slot = 0; while (used.includes(slot)) slot++;
+    return { openApps: [...list, { id, slot }], popover: false };
+  });
+  focusApp(id) {
+    const l = this.state.openApps; if (!l.length || l[l.length - 1].id === id) return;
+    this.setState(s => { const ex = s.openApps.find(o => o.id === id); return ex ? { openApps: [...s.openApps.filter(o => o.id !== id), ex] } : null; });
+  }
+  closeApp(id) { this.setState(s => ({ openApps: s.openApps.filter(o => o.id !== id) })); }
+  togglePin(id) { this.setState(s => ({ pinned: s.pinned.includes(id) ? s.pinned.filter(x => x !== id) : [...s.pinned, id] })); }
+
+  componentDidMount() {
+    this.fit = () => this.setState({ scale: Math.min(window.innerWidth / 1440, window.innerHeight / 900) });
+    this.fit(); window.addEventListener('resize', this.fit);
+    this.iv = setInterval(() => {
+      const busy = this.state.transfers.some(f => f.p < 1);
+      const upd = { now: Date.now() };
+      if (busy) upd.transfers = this.state.transfers.map(f => f.p < 1 ? { ...f, p: Math.min(1, f.p + 0.02 + Math.random() * 0.05) } : f);
+      this.setState(upd);
+    }, 150);
+    this.mt = setInterval(() => {
+      const m = this.state.media; if (!m.playing) return;
+      if (m.pos + 1 >= this.tracks[m.idx].dur) this.stepTrack(1); else this.patchMedia({ pos: m.pos + 1 });
+    }, 1000);
+    this.bt = setInterval(() => this.setState(s => ({ battery: Math.min(100, s.battery + 1) })), 20000);
+    this.t0 = setTimeout(() => this.simulateNotif(), 1800);
+  }
+  componentWillUnmount() { window.removeEventListener('resize', this.fit); clearInterval(this.iv); clearInterval(this.bt); clearInterval(this.mt); clearTimeout(this.t0); }
+
+  themeName() { return this.state.theme || (this.props.theme === 'Claro' ? 'light' : 'dark'); }
+  layoutName() { return this.state.layout || ((this.props.layout || '').startsWith('B') ? 'B' : 'A'); }
+
+  tokens() {
+    const o = (this.props.glassOpacity ?? 30) / 100;
+    if (this.themeName() === 'light') return {
+      win: `rgba(250,251,253,${o + 0.12})`, side: 'rgba(255,255,255,.25)', panel: 'rgba(255,255,255,.5)', panel2: 'rgba(255,255,255,.8)',
+      line: 'rgba(20,24,32,.08)', edge: 'rgba(255,255,255,.75)', fg: '#14161b', fg2: 'rgba(20,22,27,.62)', fg3: 'rgba(20,22,27,.45)',
+      active: 'rgba(255,255,255,.75)', track: 'rgba(20,24,32,.14)', s1: 'rgba(20,24,32,.04)', s2: 'rgba(20,24,32,.09)',
+      pop: `rgba(250,251,253,${Math.min(.92, o + 0.4)})`, input: 'rgba(255,255,255,.6)', menubar: 'rgba(255,255,255,.35)', acc: 'oklch(0.5 0.13 165)',
+      shadow: '0 40px 120px rgba(40,50,80,.25), inset 0 1px 0 rgba(255,255,255,.9)',
+      wall: 'radial-gradient(900px 600px at 18% 30%, oklch(0.86 0.1 165 / .9), transparent 60%), radial-gradient(800px 700px at 85% 75%, oklch(0.82 0.1 260 / .9), transparent 60%), radial-gradient(600px 500px at 65% 8%, oklch(0.86 0.08 310 / .7), transparent 60%), #e8ebf0'
+    };
+    return {
+      win: `rgba(22,24,32,${o})`, side: 'rgba(255,255,255,.035)', panel: 'rgba(255,255,255,.06)', panel2: 'rgba(255,255,255,.11)',
+      line: 'rgba(255,255,255,.09)', edge: 'rgba(255,255,255,.16)', fg: '#f3f4f6', fg2: 'rgba(243,244,246,.64)', fg3: 'rgba(243,244,246,.44)',
+      active: 'rgba(255,255,255,.12)', track: 'rgba(255,255,255,.16)', s1: 'rgba(255,255,255,.04)', s2: 'rgba(255,255,255,.09)',
+      pop: `rgba(30,32,42,${Math.min(.9, o + 0.3)})`, input: 'rgba(255,255,255,.07)', menubar: 'rgba(14,16,22,.3)', acc: 'oklch(0.8 0.13 165)',
+      shadow: '0 40px 120px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.14)',
+      wall: 'radial-gradient(900px 600px at 18% 30%, oklch(0.45 0.12 165 / .6), transparent 60%), radial-gradient(800px 700px at 85% 75%, oklch(0.45 0.13 260 / .65), transparent 60%), radial-gradient(600px 500px at 65% 8%, oklch(0.42 0.1 310 / .4), transparent 60%), #0b0d12'
+    };
+  }
+
+  col(h) { return `oklch(0.6 0.15 ${h})`; }
+  tg(on, t) { return { bg: on ? 'oklch(0.72 0.15 165)' : t.track, x: on ? '16px' : '2px' }; }
+  hm() { const d = new Date(); return d.toTimeString().slice(0, 5); }
+
+  go = (s) => this.setState({ section: s, popover: false });
+  simulateNotif = () => {
+    const n = this.pool[this.pi++ % this.pool.length];
+    const id = ++this.uid;
+    this.setState(s => ({
+      toasts: [{ ...n, id, replying: false, sent: false, text: '' }, ...s.toasts].slice(0, 3),
+      notifs: [{ ...n, id: 'n' + id, time: this.hm() }, ...s.notifs]
+    }));
+    setTimeout(() => this.setState(s => ({ toasts: s.toasts.filter(x => x.id !== id || x.replying) })), 7000);
+  };
+  patchToast(id, p) { this.setState(s => ({ toasts: s.toasts.map(x => x.id === id ? { ...x, ...p } : x) })); }
+  closeToast(id) { this.setState(s => ({ toasts: s.toasts.filter(x => x.id !== id) })); }
+  sendToast(id) {
+    this.patchToast(id, { replying: false, sent: true });
+    setTimeout(() => this.closeToast(id), 1400);
+  }
+  simulateCall = () => this.setState({ call: { name: 'Mãe', ini: 'M', hue: 350, state: 'ringing' }, muted: false });
+  startCall(name, ini, hue) { this.setState({ call: { name, ini, hue, state: 'active', start: Date.now() }, muted: false }); }
+  addTransfer(name, size) {
+    const id = ++this.uid;
+    this.setState(s => ({ transfers: [{ id, name, size, dir: 'up', p: 0 }, ...s.transfers], section: 'files' }));
+  }
+  simulateFile = () => this.addTransfer('Apresentação Q4.key', '48,3 MB');
+  sendMsg() {
+    const text = this.state.draft.trim(); if (!text) return;
+    const id = this.state.convId;
+    const push = (m) => this.setState(s => ({ convs: s.convs.map(c => c.id === id ? { ...c, msgs: [...c.msgs, m] } : c) }));
+    push({ me: true, text, time: this.hm() });
+    this.setState({ draft: '' });
+    setTimeout(() => this.setState({ typing: true }), 700);
+    setTimeout(() => { this.setState({ typing: false }); push({ me: false, text: ['Perfeito 👍', 'Show, combinado!', 'Boa, te aviso quando chegar'][Math.floor(Math.random() * 3)], time: this.hm() }); }, 2400);
+  }
+
+  renderVals() {
+    const t = this.tokens(), st = this.state, sec = st.section, L = this.layoutName(), dark = this.themeName() === 'dark';
+    const unread = st.convs.filter(c => c.unread).length;
+    const navDef = [
+      ['overview', 'space_dashboard', 'Visão geral'], ['messages', 'chat_bubble', 'Mensagens', unread],
+      ['calls', 'call', 'Chamadas'], ['notifs', 'notifications', 'Notificações', st.notifs.length],
+      ['photos', 'photo_library', 'Fotos'], ['files', 'folder_open', 'Arquivos'],
+      ['mirror', 'cast', 'Espelhar tela'], ['apps', 'apps', 'Apps', st.openApps.length], ['webcam', 'videocam', 'Webcam']
+    ];
+    const nav = navDef.map(([id, icon, label, badge]) => {
+      const a = sec === id;
+      return { icon, label, badge: badge || null, active: a, dot: !!badge && !a, go: () => this.go(id),
+        bg: a ? t.active : 'transparent', w: a ? 600 : 400, ic: a ? t.acc : t.fg2,
+        bgB: a ? t.active : 'transparent', sh: a ? '0 2px 8px rgba(0,0,0,.12)' : 'none' };
+    });
+    const titles = { overview: ['Visão geral', 'Tudo do seu Pixel, num só lugar'], messages: ['Mensagens', 'SMS e RCS sincronizados'], calls: ['Chamadas', 'Atenda e ligue pelo Mac'], notifs: ['Notificações', 'Espelhadas em tempo real'], photos: ['Fotos', 'Últimos 30 dias · 248 itens'], files: ['Arquivos', 'Transferência direta, sem nuvem'], mirror: ['Espelhar tela', 'Controle o Android pelo Mac'], apps: ['Apps', 'Abra apps do Pixel em janelas no Mac'], webcam: ['Webcam', 'Use a câmera do Pixel no Mac'] };
+    const is = {}; navDef.forEach(([id]) => is[id] = sec === id);
+
+    const convs = st.convs.map(c => {
+      const last = c.msgs[c.msgs.length - 1];
+      return { ...c, color: this.col(c.hue), preview: (last.me ? 'Você: ' : '') + last.text, time: last.time, unread: !!c.unread && c.id !== st.convId,
+        bg: c.id === st.convId && sec === 'messages' ? t.active : 'transparent',
+        open: () => this.setState(s => ({ convId: c.id, section: 'messages', convs: s.convs.map(x => x.id === c.id ? { ...x, unread: false } : x) })) };
+    });
+    const cur = convs.find(c => c.id === st.convId) || convs[0];
+    const thread = st.convs.find(c => c.id === cur.id).msgs.map(m => ({ ...m, align: m.me ? 'flex-end' : 'flex-start', bg: m.me ? 'oklch(0.72 0.15 165)' : t.panel2, fg: m.me ? '#06130d' : t.fg }));
+
+    const notifs = st.notifs.filter(n => st.apps[n.app] !== false).map(n => ({ ...n, color: this.col(n.hue), dismiss: () => this.setState(s => ({ notifs: s.notifs.filter(x => x.id !== n.id) })) }));
+    const appHue = { WhatsApp: 150, Gmail: 25, Nubank: 300, 'Google Agenda': 250, Instagram: 350, iFood: 20 };
+    const appIni = { WhatsApp: 'W', Gmail: 'G', Nubank: 'Nu', 'Google Agenda': 'GA', Instagram: 'IG', iFood: 'iF' };
+    const apps = Object.keys(st.apps).map(k => ({ name: k, ini: appIni[k], color: this.col(appHue[k]), tg: this.tg(st.apps[k], t), toggle: () => this.setState(s => ({ apps: { ...s.apps, [k]: !s.apps[k] } })) }));
+
+    const caps = ['hoje', 'hoje', 'hoje', 'ontem', 'ontem', '24 nov', '24 nov', '23 nov', '22 nov', '22 nov', '20 nov', '19 nov', '18 nov', '18 nov', '16 nov', '15 nov', '14 nov', '12 nov'];
+    const photos = caps.map((c, i) => { const s = st.sel.includes(i); return { label: c, sel: s, ring: s ? '0 0 0 3px oklch(0.72 0.15 165)' : 'none', scale: s ? 'scale(.95)' : 'none', toggle: () => this.setState(x => ({ sel: s ? x.sel.filter(j => j !== i) : [...x.sel, i] })) }; });
+    const nSel = st.sel.length;
+
+    const callPeople = [['Mãe', 350, 'Recebida', 'call_received', '14:05'], ['Lucas Andrade', 250, 'Perdida', 'call_missed', '11:32'], ['Júlia Martins', 60, 'Feita', 'call_made', 'Ontem'], ['Clínica Vida', 200, 'Recebida', 'call_received', 'Ontem'], ['Rafa', 150, 'Feita', 'call_made', 'Seg.'], ['Ana Souza', 25, 'Perdida', 'call_missed', 'Dom.']];
+    const ini = n => n.split(' ').map(w => w[0]).slice(0, 2).join('');
+    const calls = callPeople.map(([name, hue, kind, icon, time]) => ({ name, kind, icon, time, ini: ini(name), color: this.col(hue), nameColor: kind === 'Perdida' ? '#ff6961' : t.fg, call: () => this.startCall(name, ini(name), hue) }));
+    const favs = [['Mãe', 350], ['Lucas Andrade', 250], ['Júlia Martins', 60], ['Rafa', 150]].map(([name, hue]) => ({ first: name.split(' ')[0], ini: ini(name), color: this.col(hue), call: () => this.startCall(name, ini(name), hue) }));
+
+    const transfers = st.transfers.map(f => ({ ...f, dirIcon: f.dir === 'up' ? 'north_east' : 'south_west', w: Math.round(f.p * 100) + '%',
+      status: f.p >= 1 ? (f.dir === 'up' ? 'Enviado · ' : 'Recebido · ') + f.size : Math.round(f.p * 100) + '% de ' + f.size }));
+
+    const cam = st.cam;
+    const setCam = p => this.setState(s => ({ cam: { ...s.cam, ...p } }));
+    const lenses = ['Principal', 'Ultra-wide', 'Frontal'].map(n => ({ name: n, bg: cam.lens === n ? t.active : 'transparent', sh: cam.lens === n ? '0 2px 8px rgba(0,0,0,.12)' : 'none', pick: () => setCam({ lens: n }) }));
+    const camOpts = [['auto', 'Enquadramento automático', 'Segue você ao se mover'], ['portrait', 'Modo retrato', 'Desfoque de fundo'], ['light', 'Luz de estúdio', 'Ilumina o rosto, escurece o fundo']].map(([k, label, sub]) => ({ label, sub, tg: this.tg(cam[k], t), toggle: () => setCam({ [k]: !cam[k] }) }));
+
+    const tile = (icon, label, on, toggle, onTxt = 'Ativado', offTxt = 'Desativado') => ({ icon, label, state: on ? onTxt : offTxt, toggle,
+      bg: on ? 'oklch(0.72 0.15 165 / .14)' : t.panel, ib: on ? 'oklch(0.72 0.15 165)' : t.panel2, ic: on ? '#06130d' : t.fg });
+    const tiles = [
+      tile('content_paste', 'Transferência', st.qt.clip, () => this.setState(s => ({ qt: { ...s.qt, clip: !s.qt.clip } })), 'Sincronizando'),
+      tile('notifications', 'Notificações', st.qt.notif, () => this.setState(s => ({ qt: { ...s.qt, notif: !s.qt.notif } })), 'Espelhando'),
+      tile('videocam', 'Webcam', cam.on, () => setCam({ on: !cam.on }), 'Em uso', 'Pronta'),
+      tile('cast', 'Espelhar', st.mirroring, () => this.setState(s => ({ mirroring: !s.mirroring })), 'Ao vivo', 'Pronto')
+    ];
+
+    const byId = id => this.catalog.find(a => a.id === id);
+    const nOpen = st.openApps.length;
+    const mkApp = a => {
+      const pinned = st.pinned.includes(a.id), isOpen = st.openApps.some(o => o.id === a.id);
+      return { ...a, short: a.short || a.name, color: this.col(a.hue), pinned, isOpen,
+        sub: isOpen ? 'Aberto no Mac' : a.cat, subColor: isOpen ? t.acc : t.fg2,
+        cardBg: isOpen ? 'oklch(0.72 0.15 165 / .1)' : 'transparent',
+        ring: isOpen ? '0 0 0 2px ' + t.acc : 'none',
+        open: () => this.openApp(a.id), pin: () => this.togglePin(a.id),
+        openLabel: 'Abrir ' + a.name, pinLabel: (pinned ? 'Desafixar ' : 'Fixar ') + a.name,
+        pinFill: pinned ? "'FILL' 1" : "'FILL' 0", pinColor: pinned ? t.acc : t.fg3 };
+    };
+    const pinnedApps = st.pinned.map(byId).filter(Boolean).map(mkApp);
+    const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const q = norm(st.appQuery.trim());
+    const appList = this.catalog.filter(a => !q || norm(a.name).includes(q) || norm(a.cat).includes(q)).map(mkApp);
+    const appWins = st.openApps.map((o, i) => {
+      const a = mkApp(byId(o.id)), front = i === nOpen - 1;
+      return { ...a, x: (1060 - o.slot * 64) + 'px', y: (64 + o.slot * 34) + 'px', z: 21 + i,
+        chrome: front ? 1 : .6, state: front ? 'Em primeiro plano' : 'Janela aberta',
+        shadow: front ? '0 30px 90px rgba(0,0,0,.45)' : '0 16px 50px rgba(0,0,0,.3)',
+        focus: () => this.focusApp(o.id), close: () => this.closeApp(o.id),
+        focusLabel: 'Trazer ' + a.name + ' para frente', closeLabel: 'Fechar ' + a.name };
+    });
+    const setAppOpt = k => this.setState(s => ({ appOpt: { ...s.appOpt, [k]: !s.appOpt[k] } }));
+    const appOpts = [['dock', 'Fixados no Dock do macOS', 'Cada app fixado ganha um ícone no Dock'], ['keep', 'Usar com o Pixel bloqueado', 'Apps continuam abertos com a tela apagada'], ['full', 'Abrir em tela cheia', 'Em vez de janela no tamanho do celular']]
+      .map(([k, label, sub]) => ({ label, sub, on: String(st.appOpt[k]), tg: this.tg(st.appOpt[k], t), toggle: () => setAppOpt(k) }));
+
+    const md = st.media, tr = this.tracks[md.idx], vol = md.muted ? 0 : md.vol;
+    const seg = on => ({ bg: on ? t.panel2 : 'transparent', sh: on ? '0 2px 8px rgba(0,0,0,.12)' : 'none' });
+    const sMac = seg(md.onMac), sPh = seg(!md.onMac);
+    const beat = md.playing ? [0.55, 0.9, 0.4, 0.75, 0.6].map((b, i) => 0.25 + 0.75 * Math.abs(Math.sin(st.now / 260 + i * 1.7)) * b / 0.9) : [0.2, 0.2, 0.2, 0.2, 0.2];
+    const mp = {
+      show: md.view !== 'hidden', collapsed: md.view === 'mini', expanded: md.view === 'full',
+      title: tr.title, artist: tr.artist, app: tr.app, appIcon: tr.appIcon, icon: tr.icon, art: `linear-gradient(140deg, oklch(0.62 0.15 ${tr.hue}), oklch(0.42 0.13 ${tr.hue + 40}))`,
+      isVideo: tr.kind === 'video', isAudio: tr.kind !== 'video',
+      pos: md.pos, dur: tr.dur, pct: (md.pos / tr.dur * 100).toFixed(2) + '%', posTxt: this.fmt(md.pos), durTxt: this.fmt(tr.dur),
+      playIcon: md.playing ? 'pause' : 'play_arrow', playLabel: md.playing ? 'Pausar' : 'Reproduzir',
+      toggle: () => this.patchMedia(m => ({ playing: !m.playing })),
+      next: () => this.stepTrack(1), prev: () => md.pos > 3 ? this.patchMedia({ pos: 0 }) : this.stepTrack(-1),
+      back10: () => this.patchMedia(m => ({ pos: Math.max(0, m.pos - 10) })), fwd10: () => this.patchMedia(m => ({ pos: Math.min(tr.dur - 1, m.pos + 10) })),
+      seek: e => this.patchMedia({ pos: +e.target.value }),
+      vol, volTxt: vol + '%', volIcon: vol === 0 ? 'volume_off' : vol < 45 ? 'volume_down' : 'volume_up',
+      setVol: e => this.patchMedia({ vol: +e.target.value, muted: false }),
+      toggleMute: () => this.patchMedia(m => ({ muted: !m.muted })), muteLabel: md.muted ? 'Ativar som' : 'Silenciar',
+      toMac: () => this.patchMedia({ onMac: true }), toPhone: () => this.patchMedia({ onMac: false }),
+      macBg: sMac.bg, macSh: sMac.sh, phoneBg: sPh.bg, phoneSh: sPh.sh, macPressed: String(md.onMac), phonePressed: String(!md.onMac),
+      outIcon: md.onMac ? 'laptop_mac' : 'phone_android',
+      outHint: md.onMac ? 'O áudio do Pixel sai nos alto-falantes ou fones do Mac. O celular fica em silêncio.' : 'O áudio continua saindo pelo Pixel. O Mac só controla a reprodução.',
+      bars: beat.map(h => ({ h: h.toFixed(2) })),
+      openWin: () => this.openApp(tr.appId),
+      expand: () => this.patchMedia({ view: 'full' }), collapse: () => this.patchMedia({ view: 'mini' }), hide: () => this.patchMedia({ view: 'hidden' }),
+      menuToggle: () => this.patchMedia(m => ({ view: m.view === 'hidden' ? 'mini' : m.view === 'mini' ? 'full' : 'mini' })),
+      menuLabel: md.view === 'hidden' ? 'Mostrar player' : 'Controles de mídia',
+      menuIcon: md.playing ? 'graphic_eq' : 'music_note', menuIc: md.playing ? t.acc : t.fg, menuBg: md.view === 'full' ? 'rgba(127,127,127,.3)' : 'transparent',
+      queue: this.tracks.map((x, i) => ({ ...x, cur: i === md.idx, bg: i === md.idx ? 'oklch(0.72 0.15 165 / .12)' : 'transparent',
+        art: `linear-gradient(140deg, oklch(0.62 0.15 ${x.hue}), oklch(0.42 0.13 ${x.hue + 40}))`, label: 'Tocar ' + x.title,
+        pick: () => this.patchMedia({ idx: i, pos: 0, playing: true }) }))
+    };
+
+    const call = st.call;
+    const secs = call && call.start ? Math.floor((st.now - call.start) / 1000) : 0;
+
+    return {
+      t, scale: st.scale, clock: this.hm(), battery: st.battery, batteryW: st.battery + '%',
+      isA: L === 'A', isB: L === 'B', winDir: L === 'A' ? 'row' : 'column',
+      layA: L === 'A' ? t.active : 'transparent', layB: L === 'B' ? t.active : 'transparent',
+      setA: () => this.setState({ layout: 'A' }), setB: () => this.setState({ layout: 'B' }),
+      themeIcon: dark ? 'light_mode' : 'dark_mode', themeLabel: dark ? 'Claro' : 'Escuro',
+      toggleTheme: () => this.setState({ theme: dark ? 'light' : 'dark' }),
+      nav, is, title: titles[sec][0], subtitle: titles[sec][1],
+      popover: st.popover, popBtnBg: st.popover ? 'rgba(127,127,127,.3)' : 'transparent',
+      togglePopover: () => this.setState(s => ({ popover: !s.popover })), openFiles: () => this.go('files'),
+      tiles, mp,
+      pinnedApps, pinnedSide: pinnedApps.slice(0, 5), noPinned: pinnedApps.length === 0,
+      appList, appCount: appList.length, noApps: appList.length === 0, appQuery: st.appQuery,
+      onAppQuery: e => this.setState({ appQuery: e.target.value }),
+      appWins, openList: appWins.slice().reverse(), noOpen: nOpen === 0, appOpts,
+      goApps: () => this.go('apps'),
+      clip: 'Reunião remarcada para 16h — sala 3B, link no convite.',
+      copyLabel: st.copied ? 'Copiado ✓' : 'Colar no Mac',
+      copyClip: () => { this.setState({ copied: true }); setTimeout(() => this.setState({ copied: false }), 1600); },
+      stats: [{ k: 'Rede', v: 'Vivo 5G · 4 barras' }, { k: 'Armazenamento', v: '182 de 256 GB' }, { k: 'Não perturbe', v: 'Desativado' }],
+      quick: [
+        { icon: 'cast', label: 'Espelhar tela', sub: 'Controle total', go: () => this.go('mirror') },
+        { icon: 'videocam', label: 'Webcam', sub: 'Câmera 50 MP', go: () => this.go('webcam') },
+        { icon: 'upload_file', label: 'Enviar arquivo', sub: 'Arraste e solte', go: () => this.go('files') },
+        { icon: 'dialpad', label: 'Ligar', sub: 'Pelo Mac', go: () => this.go('calls') }
+      ],
+      notifsTop: notifs.slice(0, 3), convTop: convs.slice(0, 3), photosTop: photos.slice(0, 7),
+      goNotifs: () => this.go('notifs'), goMessages: () => this.go('messages'), goPhotos: () => this.go('photos'),
+      convs, conv: cur, thread, typing: st.typing, draft: st.draft,
+      onDraft: e => this.setState({ draft: e.target.value }),
+      onDraftKey: e => { if (e.key === 'Enter') this.sendMsg(); }, send: () => this.sendMsg(),
+      callConv: () => this.startCall(cur.name, cur.ini, cur.hue),
+      calls, favs,
+      notifs, noNotifs: notifs.length === 0, apps,
+      photos, saveLabel: nSel ? `Salvar ${nSel} no Mac` : 'Selecione fotos',
+      saveBg: nSel ? 'oklch(0.72 0.15 165)' : t.panel, saveFg: nSel ? '#06130d' : t.fg2,
+      savePhotos: () => { if (!nSel) return; const n = nSel; this.setState({ sel: [] }); const id = ++this.uid; this.setState(s => ({ transfers: [{ id, name: `${n} foto${n > 1 ? 's' : ''} do Pixel`, size: (n * 3.8).toFixed(1).replace('.', ',') + ' MB', dir: 'down', p: 0 }, ...s.transfers] })); },
+      transfers, simulateFile: this.simulateFile,
+      mirroring: st.mirroring, notMirroring: !st.mirroring,
+      toggleMirror: () => this.setState(s => ({ mirroring: !s.mirroring })),
+      screenBg: st.mirroring ? '#1a1d24' : 'linear-gradient(160deg, oklch(0.4 0.1 165), oklch(0.3 0.1 260))',
+      mirrorStatus: st.mirroring ? 'Espelhando ao vivo' : 'Pronto para espelhar', liveDot: st.mirroring ? '#ff453a' : 'oklch(0.72 0.15 165)',
+      mirrorBtn: st.mirroring ? 'Parar espelhamento' : 'Iniciar espelhamento', latency: st.mirroring ? '28 ms' : '—',
+      mirrorTools: [{ icon: 'screen_rotation', label: 'Girar' }, { icon: 'screenshot_monitor', label: 'Capturar' }, { icon: 'volume_up', label: 'Volume' }, { icon: 'home', label: 'Início' }, { icon: 'apps', label: 'Apps' }, { icon: 'fullscreen', label: 'Tela cheia' }],
+      cam, lenses, camOpts, camLabel: cam.on ? 'feed da câmera do Pixel' : 'câmera em espera',
+      camBtn: cam.on ? 'Parar câmera' : 'Iniciar câmera',
+      camBtnBg: cam.on ? t.panel2 : 'oklch(0.72 0.15 165)', camBtnFg: cam.on ? t.fg : '#06130d',
+      toggleCam: () => setCam({ on: !cam.on }),
+      call, ringing: !!call && call.state === 'ringing', inCall: !!call && call.state === 'active',
+      callColor: call ? this.col(call.hue) : 'transparent',
+      callTime: String(Math.floor(secs / 60)).padStart(2, '0') + ':' + String(secs % 60).padStart(2, '0'),
+      acceptCall: () => this.setState(s => ({ call: { ...s.call, state: 'active', start: Date.now() } })),
+      declineCall: () => this.setState({ call: null }),
+      toggleMute: () => this.setState(s => ({ muted: !s.muted })),
+      muteIcon: st.muted ? 'mic_off' : 'mic', muteBg: st.muted ? '#fff' : 'rgba(255,255,255,.15)', muteFg: st.muted ? '#000' : '#fff',
+      simulateNotif: this.simulateNotif, simulateCall: this.simulateCall,
+      toasts: st.toasts.map(n => ({ ...n, color: this.col(n.hue), showActions: !n.replying && !n.sent,
+        reply: () => this.patchToast(n.id, { replying: true }), close: () => this.closeToast(n.id),
+        onText: e => this.patchToast(n.id, { text: e.target.value }),
+        onKey: e => { if (e.key === 'Enter') this.sendToast(n.id); }, send: () => this.sendToast(n.id) })),
+      dragging: st.dragging,
+      onDragOver: e => { e.preventDefault(); if (!st.dragging) this.setState({ dragging: true }); },
+      onDragLeave: e => { if (!e.relatedTarget) this.setState({ dragging: false }); },
+      onDrop: e => { e.preventDefault(); this.setState({ dragging: false });
+        const fs = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+        if (!fs.length) return this.simulateFile();
+        fs.forEach(f => this.addTransfer(f.name, (f.size / 1048576).toFixed(1).replace('.', ',') + ' MB')); }
+    };
+  }
+}
+</script>
+</body>
+</html>

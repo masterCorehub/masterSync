@@ -190,7 +190,7 @@ struct ConnectionBar: View {
                     .font(.system(size: 23, weight: .medium))
                     .foregroundStyle(palette.accentInk)
                     .frame(width: 46, height: 46)
-                    .background(palette.accent, in: RoundedRectangle(cornerRadius: 15))
+                    .background(palette.fill, in: RoundedRectangle(cornerRadius: 15))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(model.selected?.name ?? "Android").font(.headline).lineLimit(1)
