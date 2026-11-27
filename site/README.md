@@ -19,6 +19,13 @@ Abra http://localhost:4173.
 - `js/demo.js`: simulador interativo do app de Mac, com dados de exemplo.
 - `assets/`: logo e capturas de tela.
 
-## A fazer
+## Downloads
 
-- Ligar os botões de download (`data-download="mac"` e `data-download="android"`) aos arquivos reais.
+Os botões apontam para `releases/latest/download/` do repositório `masterCorehub/masterSync`. Cada release precisa ter estes arquivos, com exatamente estes nomes:
+
+- `MasterSync-macOS.dmg`
+- `MasterSync-Android-Completo-debug.apk`
+
+## Publicar no Vercel
+
+Importar o repositório, diretório raiz `site/`, preset "Other", sem comando de build.
