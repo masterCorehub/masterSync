@@ -26,6 +26,8 @@ struct Dashboard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showNotices = false
     @State private var connectionGuide = false
+    /// Non-nil while the first-run flow (welcome → connect → features) is showing; nil for the plain connection guide.
+    @State private var onboardingStep: OnboardingStep?
     @State private var confirmTemporaryConnection = false
     @State private var guidePeer: String?
     @State private var installingWiFiTools = false
@@ -135,7 +137,10 @@ struct Dashboard: View {
         .task {
             if !seenConnectionGuide {
                 seenConnectionGuide = true
-                if !networkConsent && model.peers.isEmpty { connectionGuide = true }
+                if OnboardingFlow.shouldAutoShow(seen: false, networkConsent: networkConsent, hasPeers: !model.peers.isEmpty) {
+                    onboardingStep = .welcome
+                    connectionGuide = true
+                }
             }
         }
         .sheet(isPresented: Binding(
@@ -143,7 +148,16 @@ struct Dashboard: View {
             set: { if !$0 { closeConnectionGuide() } }
         )) {
             if connectionGuide {
-                connectionOnboarding
+                switch onboardingStep {
+                case .welcome:
+                    OnboardingWelcomeStep(onStart: { onboardingStep = .connect }, onSkip: { closeConnectionGuide() })
+                        .frame(width: 480)
+                case .features:
+                    OnboardingFeaturesStep(model: model, onFinish: { closeConnectionGuide(); model.section = .overview })
+                        .frame(width: 480)
+                default:
+                    connectionOnboarding
+                }
             } else {
                 pairing
             }
@@ -1235,6 +1249,7 @@ struct Dashboard: View {
                 Toggle("Acessar fotos e vídeos do Android", isOn: $model.galleryEnabled)
                 Toggle("Enviar e receber arquivos", isOn: $model.filesEnabled)
                 Button("Gerenciar dispositivos") { model.section = .devices }
+                Button("Rever introdução") { onboardingStep = .welcome; connectionGuide = true }
             }
             card("Digitalizar e colar", icon: "document.viewfinder") {
                 Toggle("Ativar atalho \(model.scanShortcut.label)", isOn: $model.scanPasteEnabled)
@@ -1295,12 +1310,33 @@ struct Dashboard: View {
         guideAudioConfirmed = false
         wifiToolsMessage = nil
         connectionGuide = false
+        onboardingStep = nil
         guidePeer = nil
         model.cancelPair()
     }
 
+    /// Ends the connect step: inside the first-run flow it moves on to the features step, otherwise it just closes.
+    private func finishConnectStep() {
+        guard onboardingStep != nil else {
+            closeConnectionGuide()
+            model.section = .overview
+            return
+        }
+        if testingGuideControl { model.screen.end() }
+        if testingGuideAudio { model.screen.stopUSB() }
+        testingGuideControl = false
+        testingGuideAudio = false
+        guideControlConfirmed = false
+        guideAudioConfirmed = false
+        wifiToolsMessage = nil
+        guidePeer = nil
+        model.cancelPair()
+        onboardingStep = .features
+    }
+
     private var connectionOnboarding: some View {
         VStack(alignment: .leading, spacing: 18) {
+            if onboardingStep != nil { OnboardingHeader(step: .connect) }
             Label("Conectar Android", systemImage: "iphone")
                 .font(.title2.weight(.semibold))
             // Read the real pairing state so the guide can resume or retry without a parallel protocol.
@@ -1366,7 +1402,8 @@ struct Dashboard: View {
                     .font(.caption).foregroundStyle(palette.muted)
             }
             if guidePeer.map({ model.online.contains($0) }) != true {
-                Button("Fechar") { closeConnectionGuide() }.keyboardShortcut(.cancelAction)
+                Button(onboardingStep != nil ? "Pular esta etapa" : "Fechar") { finishConnectStep() }
+                    .keyboardShortcut(.cancelAction)
             }
         }
         .padding(26)
@@ -1468,8 +1505,7 @@ struct Dashboard: View {
                       systemImage: guideAudioConfirmed ? "checkmark.circle.fill" : "circle")
             }
             Button(verified ? (guideControlConfirmed && guideAudioConfirmed ? "Finalizar" : "Finalizar sem confirmar os dois testes") : "Agora não") {
-                closeConnectionGuide()
-                model.section = .overview
+                finishConnectStep()
             }
             .buttonStyle(NexusPillStyle(prominent: verified && guideControlConfirmed && guideAudioConfirmed))
             .disabled(adb.checkingWireless || installingWiFiTools || screen.connecting)
